@@ -1,0 +1,83 @@
+{
+  "name": "budget-tracker-dz",
+  "version": "0.1.0",
+  "description": "تطبيق متكامل لإدارة الميزانية الشخصية والتجارة بالدينار الجزائري",
+  "main": "dist-electron/main.js",
+  "author": "ibra",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build && electron-builder",
+    "build:vite": "tsc -b && vite build",
+    "preview": "vite preview",
+    "electron:dev": "vite",
+    "lint": "eslint .",
+    "typecheck": "tsc -b --noEmit",
+    "package": "tsc -b && vite build && electron-builder --dir"
+  },
+  "dependencies": {
+    "@eslint/js": "^9.39.4",
+    "better-sqlite3": "^11.7.0",
+    "electron-store": "^10.0.1",
+    "i18next": "^24.2.0",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "lucide-react": "^0.469.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^15.4.0",
+    "react-router-dom": "^7.1.1",
+    "recharts": "^2.15.0",
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@typescript-eslint/eslint-plugin": "^8.19.1",
+    "@typescript-eslint/parser": "^8.19.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.3.0",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react": "^7.37.3",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "build": {
+    "appId": "com.ibra.budgettrackerdz",
+    "productName": "Budget Tracker DZ",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    }
+  }
+}

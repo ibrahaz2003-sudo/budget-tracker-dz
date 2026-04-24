@@ -1,0 +1,645 @@
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, Trash2, FileSpreadsheet, FileText, Package, ShoppingCart, TrendingUp } from 'lucide-react';
+import Page from '../components/Page';
+import Card from '../components/Card';
+import Button from '../components/Button';
+import Modal from '../components/Modal';
+import Empty from '../components/Empty';
+import StatCard from '../components/StatCard';
+import { Field, Input, Select, Textarea } from '../components/Input';
+import { api } from '../lib/api';
+import { formatDZD, formatEUR, todayISO } from '../lib/format';
+import { saveExcel, savePdf } from '../lib/export';
+import type { ComputerPurchase, ComputerSale, Settings } from '../types';
+
+type Tab = 'purchases' | 'sales';
+
+export default function ComputerTrade() {
+  const [tab, setTab] = useState<Tab>('purchases');
+  const [purchases, setPurchases] = useState<ComputerPurchase[]>([]);
+  const [sales, setSales] = useState<ComputerSale[]>([]);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
+  const [showSaleModal, setShowSaleModal] = useState(false);
+
+  const [purchase, setPurchase] = useState({
+    item_name: '',
+    quantity: '1',
+    unit_cost_eur: '',
+    eur_to_dzd_rate: '',
+    shipping_dzd: '0',
+    supplier: '',
+    notes: '',
+    purchased_on: todayISO(),
+  });
+
+  const [sale, setSale] = useState({
+    purchase_id: '',
+    item_name: '',
+    quantity: '1',
+    unit_sale_price_dzd: '',
+    unit_cost_dzd: '',
+    customer: '',
+    notes: '',
+    sold_on: todayISO(),
+  });
+
+  const load = async () => {
+    const [p, s, st] = await Promise.all([
+      api.listComputerPurchases(),
+      api.listComputerSales(),
+      api.getSettings(),
+    ]);
+    setPurchases(p);
+    setSales(s);
+    setSettings(st);
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  // Initialize default rate when opening purchase modal
+  useEffect(() => {
+    if (showPurchaseModal && settings && !purchase.eur_to_dzd_rate) {
+      setPurchase((p) => ({ ...p, eur_to_dzd_rate: settings.eur_to_dzd_default }));
+    }
+  }, [showPurchaseModal, settings, purchase.eur_to_dzd_rate]);
+
+  const totals = useMemo(() => {
+    const totalPurchasesDzd = purchases.reduce((acc, p) => acc + p.total_cost_dzd, 0);
+    const totalRevenueDzd = sales.reduce((acc, s) => acc + s.total_revenue_dzd, 0);
+    const totalProfitDzd = sales.reduce((acc, s) => acc + s.profit_dzd, 0);
+    return { totalPurchasesDzd, totalRevenueDzd, totalProfitDzd };
+  }, [purchases, sales]);
+
+  const purchasePreviewTotal = useMemo(() => {
+    const q = Number(purchase.quantity) || 0;
+    const u = Number(purchase.unit_cost_eur) || 0;
+    const r = Number(purchase.eur_to_dzd_rate) || 0;
+    const ship = Number(purchase.shipping_dzd) || 0;
+    return q * u * r + ship;
+  }, [purchase]);
+
+  const salePreview = useMemo(() => {
+    const q = Number(sale.quantity) || 0;
+    const sp = Number(sale.unit_sale_price_dzd) || 0;
+    const cp = Number(sale.unit_cost_dzd) || 0;
+    return {
+      revenue: q * sp,
+      cost: q * cp,
+      profit: q * (sp - cp),
+    };
+  }, [sale]);
+
+  const onCreatePurchase = async () => {
+    const q = Number(purchase.quantity);
+    const u = Number(purchase.unit_cost_eur);
+    const r = Number(purchase.eur_to_dzd_rate);
+    if (!purchase.item_name.trim() || !q || !u || !r) return;
+    await api.createComputerPurchase({
+      item_name: purchase.item_name.trim(),
+      quantity: q,
+      unit_cost_eur: u,
+      eur_to_dzd_rate: r,
+      shipping_dzd: Number(purchase.shipping_dzd) || 0,
+      supplier: purchase.supplier || null,
+      notes: purchase.notes || null,
+      purchased_on: purchase.purchased_on,
+    });
+    setPurchase({
+      item_name: '',
+      quantity: '1',
+      unit_cost_eur: '',
+      eur_to_dzd_rate: settings?.eur_to_dzd_default ?? '',
+      shipping_dzd: '0',
+      supplier: '',
+      notes: '',
+      purchased_on: todayISO(),
+    });
+    setShowPurchaseModal(false);
+    await load();
+  };
+
+  const onDeletePurchase = async (id: number) => {
+    if (!confirm('حذف هذه الفاتورة؟')) return;
+    await api.deleteComputerPurchase(id);
+    await load();
+  };
+
+  const onCreateSale = async () => {
+    const q = Number(sale.quantity);
+    const sp = Number(sale.unit_sale_price_dzd);
+    const cp = Number(sale.unit_cost_dzd);
+    if (!sale.item_name.trim() || !q || !sp || cp == null) return;
+    await api.createComputerSale({
+      purchase_id: sale.purchase_id ? Number(sale.purchase_id) : null,
+      item_name: sale.item_name.trim(),
+      quantity: q,
+      unit_sale_price_dzd: sp,
+      unit_cost_dzd: cp,
+      customer: sale.customer || null,
+      notes: sale.notes || null,
+      sold_on: sale.sold_on,
+    });
+    setSale({
+      purchase_id: '',
+      item_name: '',
+      quantity: '1',
+      unit_sale_price_dzd: '',
+      unit_cost_dzd: '',
+      customer: '',
+      notes: '',
+      sold_on: todayISO(),
+    });
+    setShowSaleModal(false);
+    await load();
+  };
+
+  const onDeleteSale = async (id: number) => {
+    if (!confirm('حذف هذا البيع؟')) return;
+    await api.deleteComputerSale(id);
+    await load();
+  };
+
+  // When user selects a related purchase in sale modal, prefill cost & item name
+  const onPickPurchaseForSale = (purchaseId: string) => {
+    const p = purchases.find((x) => x.id === Number(purchaseId));
+    if (!p) {
+      setSale((s) => ({ ...s, purchase_id: '' }));
+      return;
+    }
+    const unitCostDzd = p.total_cost_dzd / p.quantity;
+    setSale((s) => ({
+      ...s,
+      purchase_id: purchaseId,
+      item_name: s.item_name || p.item_name,
+      unit_cost_dzd: unitCostDzd.toFixed(2),
+    }));
+  };
+
+  const exportPurchasesExcel = () =>
+    saveExcel(
+      purchases.map((p) => ({
+        التاريخ: p.purchased_on,
+        القطعة: p.item_name,
+        الكمية: p.quantity,
+        سعر_الوحدة_EUR: p.unit_cost_eur,
+        سعر_اليورو_DZD: p.eur_to_dzd_rate,
+        الشحن_DZD: p.shipping_dzd,
+        التكلفة_الكلية_DZD: p.total_cost_dzd,
+        المورد: p.supplier ?? '',
+      })),
+      'مشتريات',
+      'computer-purchases.xlsx'
+    );
+
+  const exportSalesExcel = () =>
+    saveExcel(
+      sales.map((s) => ({
+        التاريخ: s.sold_on,
+        القطعة: s.item_name,
+        الكمية: s.quantity,
+        سعر_البيع_DZD: s.unit_sale_price_dzd,
+        التكلفة_DZD: s.unit_cost_dzd,
+        الإيراد_DZD: s.total_revenue_dzd,
+        الربح_DZD: s.profit_dzd,
+        الزبون: s.customer ?? '',
+      })),
+      'مبيعات',
+      'computer-sales.xlsx'
+    );
+
+  const exportPurchasesPdf = () =>
+    savePdf(
+      'Computer Parts Purchases',
+      ['Date', 'Item', 'Qty', 'EUR/unit', 'EUR Rate', 'Shipping', 'Total DZD', 'Supplier'],
+      purchases.map((p) => [
+        p.purchased_on,
+        p.item_name,
+        p.quantity,
+        p.unit_cost_eur,
+        p.eur_to_dzd_rate,
+        p.shipping_dzd,
+        p.total_cost_dzd,
+        p.supplier ?? '',
+      ]),
+      'computer-purchases.pdf'
+    );
+
+  const exportSalesPdf = () =>
+    savePdf(
+      'Computer Parts Sales',
+      ['Date', 'Item', 'Qty', 'Sale (DZD)', 'Cost (DZD)', 'Revenue (DZD)', 'Profit (DZD)', 'Customer'],
+      sales.map((s) => [
+        s.sold_on,
+        s.item_name,
+        s.quantity,
+        s.unit_sale_price_dzd,
+        s.unit_cost_dzd,
+        s.total_revenue_dzd,
+        s.profit_dzd,
+        s.customer ?? '',
+      ]),
+      'computer-sales.pdf'
+    );
+
+  return (
+    <Page
+      title="تجارة قطع الحاسوب"
+      description="شراء باليورو، تحويل التكلفة للدينار الجزائري، حساب الربح"
+      actions={
+        <>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={tab === 'purchases' ? exportPurchasesExcel : exportSalesExcel}
+          >
+            <FileSpreadsheet size={14} />
+            Excel
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={tab === 'purchases' ? exportPurchasesPdf : exportSalesPdf}
+          >
+            <FileText size={14} />
+            PDF
+          </Button>
+          {tab === 'purchases' ? (
+            <Button onClick={() => setShowPurchaseModal(true)}>
+              <Plus size={16} />
+              شراء جديد
+            </Button>
+          ) : (
+            <Button onClick={() => setShowSaleModal(true)}>
+              <Plus size={16} />
+              بيع جديد
+            </Button>
+          )}
+        </>
+      }
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard
+          label="إجمالي المشتريات"
+          value={formatDZD(totals.totalPurchasesDzd)}
+          icon={Package}
+          tone="default"
+        />
+        <StatCard
+          label="إجمالي الإيرادات"
+          value={formatDZD(totals.totalRevenueDzd)}
+          icon={ShoppingCart}
+          tone="positive"
+        />
+        <StatCard
+          label="صافي الربح"
+          value={formatDZD(totals.totalProfitDzd)}
+          icon={TrendingUp}
+          tone={totals.totalProfitDzd >= 0 ? 'positive' : 'negative'}
+        />
+      </div>
+
+      <div className="border-b border-slate-200 flex gap-1">
+        <button
+          onClick={() => setTab('purchases')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            tab === 'purchases'
+              ? 'border-primary-600 text-primary-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          المشتريات ({purchases.length})
+        </button>
+        <button
+          onClick={() => setTab('sales')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            tab === 'sales'
+              ? 'border-primary-600 text-primary-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          المبيعات ({sales.length})
+        </button>
+      </div>
+
+      {tab === 'purchases' && (
+        <Card>
+          {purchases.length === 0 ? (
+            <Empty
+              message="لا توجد مشتريات بعد."
+              action={
+                <Button onClick={() => setShowPurchaseModal(true)}>
+                  <Plus size={16} />
+                  شراء جديد
+                </Button>
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-right border-b border-slate-200 text-slate-600">
+                    <th className="py-2 px-3 font-medium">التاريخ</th>
+                    <th className="py-2 px-3 font-medium">القطعة</th>
+                    <th className="py-2 px-3 font-medium">الكمية</th>
+                    <th className="py-2 px-3 font-medium">السعر (EUR)</th>
+                    <th className="py-2 px-3 font-medium">سعر اليورو</th>
+                    <th className="py-2 px-3 font-medium">الشحن</th>
+                    <th className="py-2 px-3 font-medium">التكلفة الكلية</th>
+                    <th className="py-2 px-3 font-medium">المورد</th>
+                    <th className="py-2 px-3"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchases.map((p) => (
+                    <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="py-2 px-3 text-slate-700">{p.purchased_on}</td>
+                      <td className="py-2 px-3 font-medium">{p.item_name}</td>
+                      <td className="py-2 px-3">{p.quantity}</td>
+                      <td className="py-2 px-3">{formatEUR(p.unit_cost_eur)}</td>
+                      <td className="py-2 px-3 text-slate-600">{p.eur_to_dzd_rate} DA</td>
+                      <td className="py-2 px-3 text-slate-600">{formatDZD(p.shipping_dzd)}</td>
+                      <td className="py-2 px-3 font-semibold text-slate-900">
+                        {formatDZD(p.total_cost_dzd)}
+                      </td>
+                      <td className="py-2 px-3 text-slate-600">{p.supplier ?? '-'}</td>
+                      <td className="py-2 px-3 text-left">
+                        <button
+                          onClick={() => onDeletePurchase(p.id)}
+                          className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {tab === 'sales' && (
+        <Card>
+          {sales.length === 0 ? (
+            <Empty
+              message="لا توجد مبيعات بعد."
+              action={
+                <Button onClick={() => setShowSaleModal(true)}>
+                  <Plus size={16} />
+                  بيع جديد
+                </Button>
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-right border-b border-slate-200 text-slate-600">
+                    <th className="py-2 px-3 font-medium">التاريخ</th>
+                    <th className="py-2 px-3 font-medium">القطعة</th>
+                    <th className="py-2 px-3 font-medium">الكمية</th>
+                    <th className="py-2 px-3 font-medium">سعر البيع</th>
+                    <th className="py-2 px-3 font-medium">التكلفة</th>
+                    <th className="py-2 px-3 font-medium">الإيراد</th>
+                    <th className="py-2 px-3 font-medium">الربح</th>
+                    <th className="py-2 px-3 font-medium">الزبون</th>
+                    <th className="py-2 px-3"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sales.map((s) => (
+                    <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="py-2 px-3 text-slate-700">{s.sold_on}</td>
+                      <td className="py-2 px-3 font-medium">{s.item_name}</td>
+                      <td className="py-2 px-3">{s.quantity}</td>
+                      <td className="py-2 px-3">{formatDZD(s.unit_sale_price_dzd)}</td>
+                      <td className="py-2 px-3 text-slate-600">{formatDZD(s.unit_cost_dzd)}</td>
+                      <td className="py-2 px-3">{formatDZD(s.total_revenue_dzd)}</td>
+                      <td
+                        className={`py-2 px-3 font-semibold ${
+                          s.profit_dzd >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                        }`}
+                      >
+                        {formatDZD(s.profit_dzd)}
+                      </td>
+                      <td className="py-2 px-3 text-slate-600">{s.customer ?? '-'}</td>
+                      <td className="py-2 px-3 text-left">
+                        <button
+                          onClick={() => onDeleteSale(s.id)}
+                          className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Modal
+        open={showPurchaseModal}
+        onClose={() => setShowPurchaseModal(false)}
+        title="عملية شراء جديدة"
+        maxWidth="max-w-2xl"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowPurchaseModal(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={onCreatePurchase}>إضافة</Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="اسم القطعة">
+            <Input
+              value={purchase.item_name}
+              onChange={(e) => setPurchase({ ...purchase, item_name: e.target.value })}
+              placeholder="مثال: RTX 4070"
+            />
+          </Field>
+          <Field label="الكمية">
+            <Input
+              type="number"
+              min="1"
+              value={purchase.quantity}
+              onChange={(e) => setPurchase({ ...purchase, quantity: e.target.value })}
+            />
+          </Field>
+          <Field label="سعر الوحدة (EUR)">
+            <Input
+              type="number"
+              step="0.01"
+              value={purchase.unit_cost_eur}
+              onChange={(e) => setPurchase({ ...purchase, unit_cost_eur: e.target.value })}
+            />
+          </Field>
+          <Field label="سعر اليورو (DZD)" hint="افتراضي من الإعدادات، يمكن تعديله">
+            <Input
+              type="number"
+              step="0.01"
+              value={purchase.eur_to_dzd_rate}
+              onChange={(e) =>
+                setPurchase({ ...purchase, eur_to_dzd_rate: e.target.value })
+              }
+            />
+          </Field>
+          <Field label="الشحن والرسوم (DZD)">
+            <Input
+              type="number"
+              step="0.01"
+              value={purchase.shipping_dzd}
+              onChange={(e) => setPurchase({ ...purchase, shipping_dzd: e.target.value })}
+            />
+          </Field>
+          <Field label="التاريخ">
+            <Input
+              type="date"
+              value={purchase.purchased_on}
+              onChange={(e) => setPurchase({ ...purchase, purchased_on: e.target.value })}
+            />
+          </Field>
+          <Field label="المورد">
+            <Input
+              value={purchase.supplier}
+              onChange={(e) => setPurchase({ ...purchase, supplier: e.target.value })}
+              placeholder="اختياري"
+            />
+          </Field>
+          <div />
+          <div className="sm:col-span-2">
+            <Field label="ملاحظات">
+              <Textarea
+                value={purchase.notes}
+                onChange={(e) => setPurchase({ ...purchase, notes: e.target.value })}
+                rows={2}
+              />
+            </Field>
+          </div>
+          <div className="sm:col-span-2 bg-primary-50 border border-primary-200 rounded-lg p-3 text-sm">
+            <span className="text-slate-600">التكلفة الكلية المحسوبة:</span>{' '}
+            <span className="font-bold text-primary-700">{formatDZD(purchasePreviewTotal)}</span>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showSaleModal}
+        onClose={() => setShowSaleModal(false)}
+        title="عملية بيع جديدة"
+        maxWidth="max-w-2xl"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowSaleModal(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={onCreateSale}>إضافة</Button>
+          </>
+        }
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="sm:col-span-2">
+            <Field
+              label="القطعة المرتبطة (اختياري)"
+              hint="اختيارها يملأ التكلفة تلقائياً"
+            >
+              <Select
+                value={sale.purchase_id}
+                onChange={(e) => onPickPurchaseForSale(e.target.value)}
+              >
+                <option value="">— بدون ربط —</option>
+                {purchases.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.item_name} • {p.purchased_on} • تكلفة الوحدة:{' '}
+                    {formatDZD(p.total_cost_dzd / p.quantity)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <Field label="اسم القطعة">
+            <Input
+              value={sale.item_name}
+              onChange={(e) => setSale({ ...sale, item_name: e.target.value })}
+            />
+          </Field>
+          <Field label="الكمية">
+            <Input
+              type="number"
+              min="1"
+              value={sale.quantity}
+              onChange={(e) => setSale({ ...sale, quantity: e.target.value })}
+            />
+          </Field>
+          <Field label="سعر البيع للوحدة (DZD)">
+            <Input
+              type="number"
+              step="0.01"
+              value={sale.unit_sale_price_dzd}
+              onChange={(e) => setSale({ ...sale, unit_sale_price_dzd: e.target.value })}
+            />
+          </Field>
+          <Field label="تكلفة الوحدة (DZD)">
+            <Input
+              type="number"
+              step="0.01"
+              value={sale.unit_cost_dzd}
+              onChange={(e) => setSale({ ...sale, unit_cost_dzd: e.target.value })}
+            />
+          </Field>
+          <Field label="التاريخ">
+            <Input
+              type="date"
+              value={sale.sold_on}
+              onChange={(e) => setSale({ ...sale, sold_on: e.target.value })}
+            />
+          </Field>
+          <Field label="الزبون">
+            <Input
+              value={sale.customer}
+              onChange={(e) => setSale({ ...sale, customer: e.target.value })}
+              placeholder="اختياري"
+            />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="ملاحظات">
+              <Textarea
+                value={sale.notes}
+                onChange={(e) => setSale({ ...sale, notes: e.target.value })}
+                rows={2}
+              />
+            </Field>
+          </div>
+          <div className="sm:col-span-2 bg-primary-50 border border-primary-200 rounded-lg p-3 text-sm grid grid-cols-3 gap-2">
+            <div>
+              <p className="text-slate-600 text-xs">الإيراد</p>
+              <p className="font-bold text-slate-900">{formatDZD(salePreview.revenue)}</p>
+            </div>
+            <div>
+              <p className="text-slate-600 text-xs">التكلفة</p>
+              <p className="font-bold text-slate-900">{formatDZD(salePreview.cost)}</p>
+            </div>
+            <div>
+              <p className="text-slate-600 text-xs">الربح</p>
+              <p
+                className={`font-bold ${
+                  salePreview.profit >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                }`}
+              >
+                {formatDZD(salePreview.profit)}
+              </p>
+            </div>
+          </div>
+        </div>
+      </Modal>
+    </Page>
+  );
+}

@@ -1,4 +1,5 @@
 import type {
+  Absence,
   BudgetTransaction,
   Category,
   ComputerPurchase,
@@ -6,8 +7,13 @@ import type {
   CryptoTrade,
   DashboardSummary,
   Debt,
+  Holiday,
+  Lesson,
+  LessonPlan,
+  LessonPlanEntry,
   MonthlyData,
   Settings,
+  TimetableSlot,
 } from '../types';
 
 const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
@@ -109,4 +115,87 @@ export const api = {
   // Save dialog
   showSaveDialog: (options: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) =>
     invoke<{ canceled: boolean; filePath?: string }>('app:show-save-dialog', options),
+
+  // ---------- Lesson Planner ----------
+
+  // Lessons
+  listLessons: () => invoke<Lesson[]>('lessons:list'),
+  listLessonsByLevel: (level: string) => invoke<Lesson[]>('lessons:list-by-level', level),
+  createLesson: (payload: {
+    level: string;
+    field_name: string;
+    chapter: string;
+    title: string;
+    session_type: string;
+    duration_sessions: number;
+    sort_order: number;
+  }) => invoke<{ id: number }>('lessons:create', payload),
+  importLessons: (lessons: {
+    level: string;
+    field_name: string;
+    chapter: string;
+    title: string;
+    session_type: string;
+    duration_sessions: number;
+    sort_order: number;
+  }[]) => invoke<{ ok: true; count: number }>('lessons:import-batch', lessons),
+  updateLesson: (id: number, payload: {
+    level: string;
+    field_name: string;
+    chapter: string;
+    title: string;
+    session_type: string;
+    duration_sessions: number;
+    sort_order: number;
+  }) => invoke<{ ok: true }>('lessons:update', id, payload),
+  deleteLesson: (id: number) => invoke<{ ok: true }>('lessons:delete', id),
+  deleteLessonsByLevel: (level: string) => invoke<{ ok: true }>('lessons:delete-by-level', level),
+
+  // Timetable
+  listTimetable: () => invoke<TimetableSlot[]>('timetable:list'),
+  createTimetableSlot: (payload: {
+    day_of_week: number;
+    start_time: string;
+    end_time: string;
+    level: string;
+    session_type: string;
+    room: string | null;
+  }) => invoke<{ id: number }>('timetable:create', payload),
+  deleteTimetableSlot: (id: number) => invoke<{ ok: true }>('timetable:delete', id),
+
+  // Holidays
+  listHolidays: () => invoke<Holiday[]>('holidays:list'),
+  createHoliday: (payload: {
+    name: string;
+    start_date: string;
+    end_date: string;
+    is_vacation: boolean;
+  }) => invoke<{ id: number }>('holidays:create', payload),
+  deleteHoliday: (id: number) => invoke<{ ok: true }>('holidays:delete', id),
+  seedAlgerianHolidays: (year: number) =>
+    invoke<{ ok: true; seeded: boolean }>('holidays:seed-algeria', year),
+
+  // Absences
+  listAbsences: () => invoke<Absence[]>('absences:list'),
+  createAbsence: (payload: {
+    absence_date: string;
+    reason: string | null;
+    level: string | null;
+  }) => invoke<{ id: number }>('absences:create', payload),
+  deleteAbsence: (id: number) => invoke<{ ok: true }>('absences:delete', id),
+
+  // Lesson Plans
+  listLessonPlans: () => invoke<LessonPlan[]>('lesson-plans:list'),
+  getLessonPlanEntries: (planId: number) =>
+    invoke<LessonPlanEntry[]>('lesson-plans:get-entries', planId),
+  generateLessonPlan: (payload: {
+    title: string;
+    plan_type: 'weekly' | 'monthly';
+    start_date: string;
+    end_date: string;
+    level: string;
+  }) => invoke<{ id: number; entries_count: number }>('lesson-plans:generate', payload),
+  updatePlanEntryStatus: (entryId: number, status: string) =>
+    invoke<{ ok: true }>('lesson-plans:update-entry-status', entryId, status),
+  deleteLessonPlan: (id: number) => invoke<{ ok: true }>('lesson-plans:delete', id),
 };

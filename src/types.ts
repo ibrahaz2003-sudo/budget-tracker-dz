@@ -96,6 +96,77 @@ export interface MonthlyData {
   crypto: { month: string; profit: number }[];
 }
 
+// ---------- Lesson Planner ----------
+
+export interface Lesson {
+  id: number;
+  level: string;
+  field_name: string;
+  chapter: string;
+  title: string;
+  session_type: string;
+  duration_sessions: number;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface TimetableSlot {
+  id: number;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  level: string;
+  session_type: string;
+  room: string | null;
+  created_at: string;
+}
+
+export interface Holiday {
+  id: number;
+  name: string;
+  start_date: string;
+  end_date: string;
+  is_vacation: number;
+  created_at: string;
+}
+
+export interface Absence {
+  id: number;
+  absence_date: string;
+  reason: string | null;
+  level: string | null;
+  created_at: string;
+}
+
+export interface LessonPlan {
+  id: number;
+  title: string;
+  plan_type: string;
+  start_date: string;
+  end_date: string;
+  level: string;
+  created_at: string;
+}
+
+export interface LessonPlanEntry {
+  id: number;
+  plan_id: number;
+  lesson_id: number;
+  scheduled_date: string;
+  slot_id: number | null;
+  status: string;
+  notes: string | null;
+  lesson_title: string;
+  field_name: string;
+  chapter: string;
+  lesson_session_type: string;
+  lesson_level: string;
+  day_of_week: number | null;
+  start_time: string | null;
+  end_time: string | null;
+  room: string | null;
+}
+
 declare global {
   interface Window {
     api: {

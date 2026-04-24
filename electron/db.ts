@@ -117,6 +117,89 @@ export function initDatabase(): Database.Database {
     );
   `);
 
+  // ---------- Lesson Planner ----------
+
+  // Lessons (curriculum items)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lessons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      level TEXT NOT NULL,
+      field_name TEXT NOT NULL,
+      chapter TEXT NOT NULL,
+      title TEXT NOT NULL,
+      session_type TEXT NOT NULL DEFAULT 'theory',
+      duration_sessions INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Weekly timetable slots
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS timetable_slots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      day_of_week INTEGER NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      level TEXT NOT NULL,
+      session_type TEXT NOT NULL DEFAULT 'theory',
+      room TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Holidays
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS holidays (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      is_vacation INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Absence days
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS absences (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      absence_date TEXT NOT NULL,
+      reason TEXT,
+      level TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Generated lesson plans
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lesson_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      plan_type TEXT NOT NULL DEFAULT 'weekly',
+      start_date TEXT NOT NULL,
+      end_date TEXT NOT NULL,
+      level TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
+  // Plan entries
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lesson_plan_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_id INTEGER NOT NULL,
+      lesson_id INTEGER NOT NULL,
+      scheduled_date TEXT NOT NULL,
+      slot_id INTEGER,
+      status TEXT NOT NULL DEFAULT 'pending',
+      notes TEXT,
+      FOREIGN KEY (plan_id) REFERENCES lesson_plans(id) ON DELETE CASCADE,
+      FOREIGN KEY (lesson_id) REFERENCES lessons(id) ON DELETE CASCADE,
+      FOREIGN KEY (slot_id) REFERENCES timetable_slots(id) ON DELETE SET NULL
+    );
+  `);
+
   // Seed default settings if missing
   const seedSetting = db.prepare(
     'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'

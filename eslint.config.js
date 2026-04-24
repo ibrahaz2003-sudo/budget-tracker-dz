@@ -31,6 +31,8 @@ export default [
         __dirname: 'readonly',
         __filename: 'readonly',
         Buffer: 'readonly',
+        Blob: 'readonly',
+        URL: 'readonly',
       },
     },
     plugins: {

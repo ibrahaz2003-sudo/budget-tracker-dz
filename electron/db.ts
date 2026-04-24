@@ -65,7 +65,13 @@ export function initDatabase(): Database.Database {
     );
   `);
 
-  // Computer parts inventory items
+  // Computer parts inventory items.
+  // Note: column names reflect original schema. `unit_cost_eur` holds the unit
+  // cost in the chosen purchase currency (EUR or USD), and `eur_to_dzd_rate`
+  // holds the DZD conversion rate for that currency. The new columns below
+  // (purchase_currency, shipping_eur, shipping_eur_rate) extend the record so
+  // the UI can distinguish purchases paid in USD and compute shipping —
+  // always paid in EUR — correctly.
   db.exec(`
     CREATE TABLE IF NOT EXISTS computer_purchases (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,6 +86,38 @@ export function initDatabase(): Database.Database {
       purchased_on TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+  `);
+
+  // Additive migration: add purchase_currency + shipping (EUR) fields if missing.
+  const pragmaCols = db
+    .prepare("PRAGMA table_info('computer_purchases')")
+    .all() as { name: string }[];
+  const colNames = new Set(pragmaCols.map((c) => c.name));
+  if (!colNames.has('purchase_currency')) {
+    db.exec(
+      "ALTER TABLE computer_purchases ADD COLUMN purchase_currency TEXT NOT NULL DEFAULT 'EUR'"
+    );
+  }
+  if (!colNames.has('shipping_eur')) {
+    db.exec('ALTER TABLE computer_purchases ADD COLUMN shipping_eur REAL');
+  }
+  if (!colNames.has('shipping_eur_rate')) {
+    db.exec('ALTER TABLE computer_purchases ADD COLUMN shipping_eur_rate REAL');
+  }
+  // Back-fill shipping_eur / shipping_eur_rate for legacy rows where only shipping_dzd was stored.
+  db.exec(`
+    UPDATE computer_purchases
+    SET shipping_eur_rate = eur_to_dzd_rate
+    WHERE shipping_eur_rate IS NULL
+  `);
+  db.exec(`
+    UPDATE computer_purchases
+    SET shipping_eur = CASE
+      WHEN eur_to_dzd_rate IS NOT NULL AND eur_to_dzd_rate > 0
+        THEN shipping_dzd / eur_to_dzd_rate
+      ELSE 0
+    END
+    WHERE shipping_eur IS NULL
   `);
 
   db.exec(`

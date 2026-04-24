@@ -163,33 +163,46 @@ export function registerIpcHandlers() {
       payload: {
         item_name: string;
         quantity: number;
-        unit_cost_eur: number;
-        eur_to_dzd_rate: number;
-        shipping_dzd: number;
+        purchase_currency: 'EUR' | 'USD';
+        // Unit cost in the chosen purchase currency (stored in legacy
+        // `unit_cost_eur` column for backward compatibility).
+        unit_cost: number;
+        // DZD rate for the chosen purchase currency (stored in legacy
+        // `eur_to_dzd_rate` column for backward compatibility).
+        currency_to_dzd_rate: number;
+        // Shipping is always priced in EUR by the supplier; convert via the
+        // EUR→DZD rate at record time.
+        shipping_eur: number;
+        shipping_eur_rate: number;
         supplier: string | null;
         notes: string | null;
         purchased_on: string;
       }
     ) => {
+      const shipping_dzd = payload.shipping_eur * payload.shipping_eur_rate;
       const total_cost_dzd =
-        payload.unit_cost_eur * payload.eur_to_dzd_rate * payload.quantity +
-        payload.shipping_dzd;
+        payload.unit_cost * payload.currency_to_dzd_rate * payload.quantity +
+        shipping_dzd;
       const info = getDb()
         .prepare(
           `INSERT INTO computer_purchases (item_name, quantity, unit_cost_eur, eur_to_dzd_rate,
-            shipping_dzd, total_cost_dzd, supplier, notes, purchased_on)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            shipping_dzd, total_cost_dzd, supplier, notes, purchased_on,
+            purchase_currency, shipping_eur, shipping_eur_rate)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           payload.item_name,
           payload.quantity,
-          payload.unit_cost_eur,
-          payload.eur_to_dzd_rate,
-          payload.shipping_dzd,
+          payload.unit_cost,
+          payload.currency_to_dzd_rate,
+          shipping_dzd,
           total_cost_dzd,
           payload.supplier,
           payload.notes,
-          payload.purchased_on
+          payload.purchased_on,
+          payload.purchase_currency,
+          payload.shipping_eur,
+          payload.shipping_eur_rate
         );
       return { id: info.lastInsertRowid, total_cost_dzd };
     }

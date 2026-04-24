@@ -4,19 +4,25 @@ import {
   Wallet,
   Cpu,
   Coins,
+  HandCoins,
+  Scale,
   Settings as SettingsIcon,
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import Budget from './pages/Budget';
 import ComputerTrade from './pages/ComputerTrade';
 import CryptoTrade from './pages/CryptoTrade';
+import Debts from './pages/Debts';
+import Zakat from './pages/Zakat';
 import Settings from './pages/Settings';
 
 const navItems = [
   { to: '/dashboard', label: 'الرئيسية', icon: LayoutDashboard },
   { to: '/budget', label: 'الميزانية الشخصية', icon: Wallet },
   { to: '/computer', label: 'تجارة قطع الحاسوب', icon: Cpu },
-  { to: '/crypto', label: 'العملات الإلكترونية', icon: Coins },
+  { to: '/crypto', label: 'تجارة العملات', icon: Coins },
+  { to: '/debts', label: 'الديون', icon: HandCoins },
+  { to: '/zakat', label: 'الزكاة', icon: Scale },
   { to: '/settings', label: 'الإعدادات', icon: SettingsIcon },
 ];
 
@@ -61,6 +67,8 @@ export default function App() {
           <Route path="/budget" element={<Budget />} />
           <Route path="/computer" element={<ComputerTrade />} />
           <Route path="/crypto" element={<CryptoTrade />} />
+          <Route path="/debts" element={<Debts />} />
+          <Route path="/zakat" element={<Zakat />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>

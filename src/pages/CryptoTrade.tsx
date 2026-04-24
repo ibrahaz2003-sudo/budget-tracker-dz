@@ -12,7 +12,9 @@ import { formatDZD, formatNumber, todayISO } from '../lib/format';
 import { saveExcel, savePdf } from '../lib/export';
 import type { CryptoTrade as CryptoTradeT, Settings } from '../types';
 
-const COMMON_COINS = ['USDT', 'BTC', 'ETH', 'BNB', 'TRX', 'SOL'];
+// Tradeable items: stablecoins, major cryptos, and also fiat EUR / USD which
+// the user trades against DZD (buy-low sell-high on the parallel market).
+const COMMON_COINS = ['USDT', 'EUR', 'USD', 'BTC', 'ETH', 'BNB', 'TRX', 'SOL'];
 
 export default function CryptoTrade() {
   const [trades, setTrades] = useState<CryptoTradeT[]>([]);
@@ -39,10 +41,17 @@ export default function CryptoTrade() {
     load();
   }, []);
 
-  // Suggest default USDT price = USD-to-DZD rate
+  // Suggest a default price depending on the chosen currency/coin.
   useEffect(() => {
-    if (showModal && settings && !form.price_per_unit_dzd && form.coin === 'USDT') {
-      setForm((f) => ({ ...f, price_per_unit_dzd: settings.usd_to_dzd_default }));
+    if (!showModal || !settings || form.price_per_unit_dzd) return;
+    let defaultPrice = '';
+    if (form.coin === 'USDT' || form.coin === 'USD') {
+      defaultPrice = settings.usd_to_dzd_default;
+    } else if (form.coin === 'EUR') {
+      defaultPrice = settings.eur_to_dzd_default;
+    }
+    if (defaultPrice) {
+      setForm((f) => ({ ...f, price_per_unit_dzd: defaultPrice }));
     }
   }, [showModal, settings, form.price_per_unit_dzd, form.coin]);
 
@@ -54,9 +63,17 @@ export default function CryptoTrade() {
       .filter((t) => t.trade_type === 'sell')
       .reduce((acc, t) => acc + t.total_dzd, 0);
 
-    // Per-coin holdings: net quantity bought - sold
+    // Per-coin holdings: net quantity bought - sold.
+    // Sort by trade date ascending, then by id ascending, so that trades on
+    // the same day are folded in the order they were entered (which is
+    // stable) — avoids the case where a same-day sell gets applied before a
+    // same-day buy and skews the weighted average.
     const holdings: Record<string, { qty: number; avgBuyPrice: number }> = {};
-    for (const t of [...trades].sort((a, b) => a.traded_on.localeCompare(b.traded_on))) {
+    const sorted = [...trades].sort((a, b) => {
+      const d = a.traded_on.localeCompare(b.traded_on);
+      return d !== 0 ? d : a.id - b.id;
+    });
+    for (const t of sorted) {
       if (!holdings[t.coin]) holdings[t.coin] = { qty: 0, avgBuyPrice: 0 };
       const h = holdings[t.coin];
       if (t.trade_type === 'buy') {
@@ -141,8 +158,8 @@ export default function CryptoTrade() {
 
   return (
     <Page
-      title="تجارة العملات الإلكترونية"
-      description="شراء وبيع USDT والعملات الرقمية مع تتبع الربح والخسارة"
+      title="تجارة العملات"
+      description="شراء وبيع العملات الرقمية (USDT...) والنقدية (EUR / USD) بالدينار الجزائري"
       actions={
         <>
           <Button variant="secondary" size="sm" onClick={exportExcel}>
@@ -207,7 +224,7 @@ export default function CryptoTrade() {
       <Card title="السجل">
         {trades.length === 0 ? (
           <Empty
-            message="لا توجد عمليات بعد. أضف أول صفقة USDT."
+            message="لا توجد عمليات بعد. أضف أول صفقة."
             action={
               <Button onClick={() => setShowModal(true)}>
                 <Plus size={16} />

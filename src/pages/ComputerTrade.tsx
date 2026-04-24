@@ -8,7 +8,7 @@ import Empty from '../components/Empty';
 import StatCard from '../components/StatCard';
 import { Field, Input, Select, Textarea } from '../components/Input';
 import { api } from '../lib/api';
-import { formatDZD, formatEUR, todayISO } from '../lib/format';
+import { formatDZD, formatEUR, formatUSD, todayISO } from '../lib/format';
 import { saveExcel, savePdf } from '../lib/export';
 import type { ComputerPurchase, ComputerSale, Settings } from '../types';
 
@@ -25,9 +25,11 @@ export default function ComputerTrade() {
   const [purchase, setPurchase] = useState({
     item_name: '',
     quantity: '1',
-    unit_cost_eur: '',
-    eur_to_dzd_rate: '',
-    shipping_dzd: '0',
+    purchase_currency: 'EUR' as 'EUR' | 'USD',
+    unit_cost: '',
+    currency_to_dzd_rate: '',
+    shipping_eur: '0',
+    shipping_eur_rate: '',
     supplier: '',
     notes: '',
     purchased_on: todayISO(),
@@ -59,12 +61,38 @@ export default function ComputerTrade() {
     load();
   }, []);
 
-  // Initialize default rate when opening purchase modal
+  // Initialize default rates when opening purchase modal (or when currency
+  // changes). Currency rate defaults to the setting for the chosen currency;
+  // EUR rate (always used for shipping) defaults to the EUR setting.
   useEffect(() => {
-    if (showPurchaseModal && settings && !purchase.eur_to_dzd_rate) {
-      setPurchase((p) => ({ ...p, eur_to_dzd_rate: settings.eur_to_dzd_default }));
+    if (!showPurchaseModal || !settings) return;
+    setPurchase((p) => {
+      const updates: Partial<typeof p> = {};
+      const defaultForCurrency =
+        p.purchase_currency === 'USD'
+          ? settings.usd_to_dzd_default
+          : settings.eur_to_dzd_default;
+      if (!p.currency_to_dzd_rate) updates.currency_to_dzd_rate = defaultForCurrency;
+      if (!p.shipping_eur_rate) updates.shipping_eur_rate = settings.eur_to_dzd_default;
+      return Object.keys(updates).length ? { ...p, ...updates } : p;
+    });
+  }, [showPurchaseModal, settings, purchase.purchase_currency]);
+
+  const onChangePurchaseCurrency = (next: 'EUR' | 'USD') => {
+    if (!settings) {
+      setPurchase((p) => ({ ...p, purchase_currency: next }));
+      return;
     }
-  }, [showPurchaseModal, settings, purchase.eur_to_dzd_rate]);
+    const defaultForNext =
+      next === 'USD' ? settings.usd_to_dzd_default : settings.eur_to_dzd_default;
+    setPurchase((p) => ({
+      ...p,
+      purchase_currency: next,
+      // Always refresh the per-currency rate to the setting default when the
+      // user switches currency, so the modal makes the new rate visible.
+      currency_to_dzd_rate: defaultForNext,
+    }));
+  };
 
   const totals = useMemo(() => {
     const totalPurchasesDzd = purchases.reduce((acc, p) => acc + p.total_cost_dzd, 0);
@@ -73,12 +101,15 @@ export default function ComputerTrade() {
     return { totalPurchasesDzd, totalRevenueDzd, totalProfitDzd };
   }, [purchases, sales]);
 
-  const purchasePreviewTotal = useMemo(() => {
+  const purchasePreview = useMemo(() => {
     const q = Number(purchase.quantity) || 0;
-    const u = Number(purchase.unit_cost_eur) || 0;
-    const r = Number(purchase.eur_to_dzd_rate) || 0;
-    const ship = Number(purchase.shipping_dzd) || 0;
-    return q * u * r + ship;
+    const u = Number(purchase.unit_cost) || 0;
+    const r = Number(purchase.currency_to_dzd_rate) || 0;
+    const shipEur = Number(purchase.shipping_eur) || 0;
+    const shipRate = Number(purchase.shipping_eur_rate) || 0;
+    const itemsDzd = q * u * r;
+    const shippingDzd = shipEur * shipRate;
+    return { itemsDzd, shippingDzd, total: itemsDzd + shippingDzd };
   }, [purchase]);
 
   const salePreview = useMemo(() => {
@@ -94,15 +125,21 @@ export default function ComputerTrade() {
 
   const onCreatePurchase = async () => {
     const q = Number(purchase.quantity);
-    const u = Number(purchase.unit_cost_eur);
-    const r = Number(purchase.eur_to_dzd_rate);
+    const u = Number(purchase.unit_cost);
+    const r = Number(purchase.currency_to_dzd_rate);
+    const shipEur = Number(purchase.shipping_eur) || 0;
+    const shipRate = Number(purchase.shipping_eur_rate);
     if (!purchase.item_name.trim() || !q || !u || !r) return;
+    // Shipping rate is required only when shipping is non-zero.
+    if (shipEur > 0 && !shipRate) return;
     await api.createComputerPurchase({
       item_name: purchase.item_name.trim(),
       quantity: q,
-      unit_cost_eur: u,
-      eur_to_dzd_rate: r,
-      shipping_dzd: Number(purchase.shipping_dzd) || 0,
+      purchase_currency: purchase.purchase_currency,
+      unit_cost: u,
+      currency_to_dzd_rate: r,
+      shipping_eur: shipEur,
+      shipping_eur_rate: shipRate || Number(settings?.eur_to_dzd_default ?? 0),
       supplier: purchase.supplier || null,
       notes: purchase.notes || null,
       purchased_on: purchase.purchased_on,
@@ -110,9 +147,11 @@ export default function ComputerTrade() {
     setPurchase({
       item_name: '',
       quantity: '1',
-      unit_cost_eur: '',
-      eur_to_dzd_rate: settings?.eur_to_dzd_default ?? '',
-      shipping_dzd: '0',
+      purchase_currency: 'EUR',
+      unit_cost: '',
+      currency_to_dzd_rate: settings?.eur_to_dzd_default ?? '',
+      shipping_eur: '0',
+      shipping_eur_rate: settings?.eur_to_dzd_default ?? '',
       supplier: '',
       notes: '',
       purchased_on: todayISO(),
@@ -184,8 +223,11 @@ export default function ComputerTrade() {
         التاريخ: p.purchased_on,
         القطعة: p.item_name,
         الكمية: p.quantity,
-        سعر_الوحدة_EUR: p.unit_cost_eur,
-        سعر_اليورو_DZD: p.eur_to_dzd_rate,
+        عملة_الشراء: p.purchase_currency,
+        سعر_الوحدة: p.unit_cost_eur,
+        سعر_العملة_DZD: p.eur_to_dzd_rate,
+        الشحن_EUR: p.shipping_eur ?? '',
+        سعر_اليورو_للشحن_DZD: p.shipping_eur_rate ?? '',
         الشحن_DZD: p.shipping_dzd,
         التكلفة_الكلية_DZD: p.total_cost_dzd,
         المورد: p.supplier ?? '',
@@ -213,13 +255,28 @@ export default function ComputerTrade() {
   const exportPurchasesPdf = () =>
     savePdf(
       'Computer Parts Purchases',
-      ['Date', 'Item', 'Qty', 'EUR/unit', 'EUR Rate', 'Shipping', 'Total DZD', 'Supplier'],
+      [
+        'Date',
+        'Item',
+        'Qty',
+        'Cur',
+        'Unit Cost',
+        'Cur Rate',
+        'Ship (EUR)',
+        'EUR Rate',
+        'Ship (DZD)',
+        'Total DZD',
+        'Supplier',
+      ],
       purchases.map((p) => [
         p.purchased_on,
         p.item_name,
         p.quantity,
+        p.purchase_currency,
         p.unit_cost_eur,
         p.eur_to_dzd_rate,
+        p.shipping_eur ?? '-',
+        p.shipping_eur_rate ?? '-',
         p.shipping_dzd,
         p.total_cost_dzd,
         p.supplier ?? '',
@@ -344,9 +401,9 @@ export default function ComputerTrade() {
                     <th className="py-2 px-3 font-medium">التاريخ</th>
                     <th className="py-2 px-3 font-medium">القطعة</th>
                     <th className="py-2 px-3 font-medium">الكمية</th>
-                    <th className="py-2 px-3 font-medium">السعر (EUR)</th>
-                    <th className="py-2 px-3 font-medium">سعر اليورو</th>
-                    <th className="py-2 px-3 font-medium">الشحن</th>
+                    <th className="py-2 px-3 font-medium">سعر الوحدة</th>
+                    <th className="py-2 px-3 font-medium">سعر العملة</th>
+                    <th className="py-2 px-3 font-medium">الشحن (EUR)</th>
                     <th className="py-2 px-3 font-medium">التكلفة الكلية</th>
                     <th className="py-2 px-3 font-medium">المورد</th>
                     <th className="py-2 px-3"></th>
@@ -358,9 +415,19 @@ export default function ComputerTrade() {
                       <td className="py-2 px-3 text-slate-700">{p.purchased_on}</td>
                       <td className="py-2 px-3 font-medium">{p.item_name}</td>
                       <td className="py-2 px-3">{p.quantity}</td>
-                      <td className="py-2 px-3">{formatEUR(p.unit_cost_eur)}</td>
-                      <td className="py-2 px-3 text-slate-600">{p.eur_to_dzd_rate} DA</td>
-                      <td className="py-2 px-3 text-slate-600">{formatDZD(p.shipping_dzd)}</td>
+                      <td className="py-2 px-3">
+                        {p.purchase_currency === 'USD'
+                          ? formatUSD(p.unit_cost_eur)
+                          : formatEUR(p.unit_cost_eur)}
+                      </td>
+                      <td className="py-2 px-3 text-slate-600">
+                        {p.eur_to_dzd_rate} DA / {p.purchase_currency}
+                      </td>
+                      <td className="py-2 px-3 text-slate-600">
+                        {p.shipping_eur != null
+                          ? `${formatEUR(p.shipping_eur)} (${formatDZD(p.shipping_dzd)})`
+                          : formatDZD(p.shipping_dzd)}
+                      </td>
                       <td className="py-2 px-3 font-semibold text-slate-900">
                         {formatDZD(p.total_cost_dzd)}
                       </td>
@@ -474,30 +541,61 @@ export default function ComputerTrade() {
               onChange={(e) => setPurchase({ ...purchase, quantity: e.target.value })}
             />
           </Field>
-          <Field label="سعر الوحدة (EUR)">
+          <Field label="عملة الشراء" hint="EUR أو USD (الشحن دائماً بالأورو)">
+            <Select
+              value={purchase.purchase_currency}
+              onChange={(e) =>
+                onChangePurchaseCurrency(e.target.value as 'EUR' | 'USD')
+              }
+            >
+              <option value="EUR">EUR — يورو</option>
+              <option value="USD">USD — دولار</option>
+            </Select>
+          </Field>
+          <Field label={`سعر الوحدة (${purchase.purchase_currency})`}>
             <Input
               type="number"
               step="0.01"
-              value={purchase.unit_cost_eur}
-              onChange={(e) => setPurchase({ ...purchase, unit_cost_eur: e.target.value })}
+              value={purchase.unit_cost}
+              onChange={(e) => setPurchase({ ...purchase, unit_cost: e.target.value })}
             />
           </Field>
-          <Field label="سعر اليورو (DZD)" hint="افتراضي من الإعدادات، يمكن تعديله">
+          <Field
+            label={`سعر ${
+              purchase.purchase_currency === 'USD' ? 'الدولار' : 'اليورو'
+            } (DZD)`}
+            hint="افتراضي من الإعدادات، يمكن تعديله"
+          >
             <Input
               type="number"
               step="0.01"
-              value={purchase.eur_to_dzd_rate}
+              value={purchase.currency_to_dzd_rate}
               onChange={(e) =>
-                setPurchase({ ...purchase, eur_to_dzd_rate: e.target.value })
+                setPurchase({ ...purchase, currency_to_dzd_rate: e.target.value })
               }
             />
           </Field>
-          <Field label="الشحن والرسوم (DZD)">
+          <Field label="الشحن والرسوم (EUR)" hint="المورد دائماً يفوتر الشحن بالأورو">
             <Input
               type="number"
               step="0.01"
-              value={purchase.shipping_dzd}
-              onChange={(e) => setPurchase({ ...purchase, shipping_dzd: e.target.value })}
+              value={purchase.shipping_eur}
+              onChange={(e) =>
+                setPurchase({ ...purchase, shipping_eur: e.target.value })
+              }
+            />
+          </Field>
+          <Field
+            label="سعر الأورو للشحن (DZD)"
+            hint="يُستخدم لتحويل الشحن إلى الدينار"
+          >
+            <Input
+              type="number"
+              step="0.01"
+              value={purchase.shipping_eur_rate}
+              onChange={(e) =>
+                setPurchase({ ...purchase, shipping_eur_rate: e.target.value })
+              }
             />
           </Field>
           <Field label="التاريخ">
@@ -514,7 +612,6 @@ export default function ComputerTrade() {
               placeholder="اختياري"
             />
           </Field>
-          <div />
           <div className="sm:col-span-2">
             <Field label="ملاحظات">
               <Textarea
@@ -524,9 +621,25 @@ export default function ComputerTrade() {
               />
             </Field>
           </div>
-          <div className="sm:col-span-2 bg-primary-50 border border-primary-200 rounded-lg p-3 text-sm">
-            <span className="text-slate-600">التكلفة الكلية المحسوبة:</span>{' '}
-            <span className="font-bold text-primary-700">{formatDZD(purchasePreviewTotal)}</span>
+          <div className="sm:col-span-2 bg-primary-50 border border-primary-200 rounded-lg p-3 text-sm space-y-1">
+            <div>
+              <span className="text-slate-600">تكلفة القطع:</span>{' '}
+              <span className="font-medium text-slate-800">
+                {formatDZD(purchasePreview.itemsDzd)}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-600">تكلفة الشحن:</span>{' '}
+              <span className="font-medium text-slate-800">
+                {formatDZD(purchasePreview.shippingDzd)}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-600">التكلفة الكلية المحسوبة:</span>{' '}
+              <span className="font-bold text-primary-700">
+                {formatDZD(purchasePreview.total)}
+              </span>
+            </div>
           </div>
         </div>
       </Modal>

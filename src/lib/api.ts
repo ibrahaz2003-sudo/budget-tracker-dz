@@ -65,9 +65,11 @@ export const api = {
   createComputerPurchase: (payload: {
     item_name: string;
     quantity: number;
-    unit_cost_eur: number;
-    eur_to_dzd_rate: number;
-    shipping_dzd: number;
+    purchase_currency: 'EUR' | 'USD';
+    unit_cost: number;
+    currency_to_dzd_rate: number;
+    shipping_eur: number;
+    shipping_eur_rate: number;
     supplier: string | null;
     notes: string | null;
     purchased_on: string;

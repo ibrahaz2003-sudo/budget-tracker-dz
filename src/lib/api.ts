@@ -10,11 +10,28 @@ import type {
   Settings,
 } from '../types';
 
-const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => {
-  if (typeof window === 'undefined' || !window.api) {
-    return Promise.reject(new Error('Electron API not available'));
+// On Electron the renderer talks to the main process via window.api (set up by
+// preload.ts). Inside Capacitor (Android) we instead route to a local SQLite
+// adapter that mirrors the same channel contract — see src/data/mobileDb.ts.
+// Detection is lazy so the mobile bundle isn't pulled into the Electron build
+// when window.api is present.
+const isCapacitor = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  if (window.api) return false;
+  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } })
+    .Capacitor;
+  return !!cap?.isNativePlatform?.();
+};
+
+const invoke = async <T>(channel: string, ...args: unknown[]): Promise<T> => {
+  if (typeof window !== 'undefined' && window.api) {
+    return window.api.invoke(channel, ...args) as Promise<T>;
   }
-  return window.api.invoke(channel, ...args) as Promise<T>;
+  if (isCapacitor()) {
+    const { invokeMobile } = await import('../data/mobileDb');
+    return invokeMobile<T>(channel, ...args);
+  }
+  return Promise.reject(new Error('No data backend available (need Electron or Capacitor)'));
 };
 
 export const api = {

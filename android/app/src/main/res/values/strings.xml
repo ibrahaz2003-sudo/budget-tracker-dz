@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Budget Tracker DZ</string>
+    <string name="title_activity_main">Budget Tracker DZ</string>
+    <string name="package_name">com.ibrahaz.budgettrackerdz</string>
+    <string name="custom_url_scheme">com.ibrahaz.budgettrackerdz</string>
+</resources>

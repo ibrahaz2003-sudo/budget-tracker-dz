@@ -15,9 +15,15 @@
     "electron:dev": "vite",
     "lint": "eslint .",
     "typecheck": "tsc -b --noEmit",
-    "package": "tsc -b && vite build && electron-builder --dir"
+    "package": "tsc -b && vite build && electron-builder --dir",
+    "android:sync": "tsc -b && vite build && cap sync android",
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor-community/sqlite": "^8.1.0",
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
     "@eslint/js": "^9.39.4",
     "better-sqlite3": "^11.7.0",
     "electron-store": "^10.0.1",

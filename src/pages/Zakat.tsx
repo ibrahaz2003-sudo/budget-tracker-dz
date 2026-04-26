@@ -64,6 +64,29 @@ export default function Zakat() {
     return Math.max(0, purchasesTotal - salesCost);
   }, [purchases, sales]);
 
+  // Realized cash flow from computer trading = sale revenue − purchase cost.
+  // Combined with inventoryCost this captures the full asset picture:
+  //   (sales_rev − purchases) + (purchases − sales_cost) = sales_rev − sales_cost
+  // i.e. inventory-at-cost + realized gross profit. Without this term we were
+  // ignoring the profit cash sitting "in the pocket" after each sale.
+  const computerTradingCash = useMemo(() => {
+    const salesRevenue = sales.reduce((a, s) => a + s.total_revenue_dzd, 0);
+    const purchasesTotal = purchases.reduce((a, p) => a + p.total_cost_dzd, 0);
+    return salesRevenue - purchasesTotal;
+  }, [purchases, sales]);
+
+  // Realized cash flow from crypto / fiat trading = total sell DZD − total buy
+  // DZD. Same reasoning as computerTradingCash.
+  const cryptoTradingCash = useMemo(() => {
+    const buys = crypto
+      .filter((t) => t.trade_type === 'buy')
+      .reduce((a, t) => a + t.total_dzd, 0);
+    const sells = crypto
+      .filter((t) => t.trade_type === 'sell')
+      .reduce((a, t) => a + t.total_dzd, 0);
+    return sells - buys;
+  }, [crypto]);
+
   // Crypto/fiat holdings valued at weighted average buy price (conservative,
   // since using last buy or market price would require manual input).
   const cryptoHoldings = useMemo(() => {
@@ -113,13 +136,23 @@ export default function Zakat() {
   // overdrafts.
   const cashDzd = summary ? Math.max(0, summary.net_personal_dzd) : 0;
 
-  // Capital = cash + inventory at cost + crypto/fiat holdings
+  // Capital = personal cash + realized trading cash (computer + crypto)
+  //           + inventory at cost + crypto/fiat holdings
   //           + debts owed to me (collectible) − debts I owe.
+  // Trading cash flow can be negative (still buying, not yet selling) — we
+  // keep it as-is instead of clamping, because that accurately represents the
+  // outflow from personal cash. Clamping would double-count.
   // Scholars differ on whether debts-owed-to-me are included immediately or
   // only when received; we include them so the user sees the upper bound and
   // can adjust manually.
   const totalCapital =
-    cashDzd + inventoryCost + cryptoHoldings.totalDzd + debtsSummary.owedToMe - debtsSummary.iOwe;
+    cashDzd +
+    computerTradingCash +
+    cryptoTradingCash +
+    inventoryCost +
+    cryptoHoldings.totalDzd +
+    debtsSummary.owedToMe -
+    debtsSummary.iOwe;
 
   const nisabDzd = (() => {
     const p = Number(goldGramPrice) || 0;
@@ -165,6 +198,16 @@ export default function Zakat() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2 text-sm">
             <Row label="نقد (صافي دخل − مصاريف)" value={cashDzd} />
+            <Row
+              label="نقد تجارة قطع الحاسوب (مبيعات − مشتريات)"
+              value={computerTradingCash}
+              negative={computerTradingCash < 0}
+            />
+            <Row
+              label="نقد تداول العملات (بيع − شراء)"
+              value={cryptoTradingCash}
+              negative={cryptoTradingCash < 0}
+            />
             <Row label="مخزون قطع الحاسوب بالتكلفة" value={inventoryCost} />
             <Row
               label="حيازة العملات بالمتوسط الموزون"

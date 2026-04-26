@@ -24,6 +24,7 @@ export default function CryptoTrade() {
   const [form, setForm] = useState({
     trade_type: 'buy' as 'buy' | 'sell',
     coin: 'USDT',
+    custom_coin: '',
     quantity: '',
     price_per_unit_dzd: '',
     counterparty: '',
@@ -41,19 +42,23 @@ export default function CryptoTrade() {
     load();
   }, []);
 
-  // Suggest a default price depending on the chosen currency/coin.
+  // Suggest a default price depending on the chosen currency/coin. Only
+  // pre-fills when the price field is empty so a user-entered override is
+  // never clobbered.
   useEffect(() => {
     if (!showModal || !settings || form.price_per_unit_dzd) return;
+    const coin =
+      form.coin === '__custom__' ? form.custom_coin.trim().toUpperCase() : form.coin;
     let defaultPrice = '';
-    if (form.coin === 'USDT' || form.coin === 'USD') {
+    if (coin === 'USDT' || coin === 'USD') {
       defaultPrice = settings.usd_to_dzd_default;
-    } else if (form.coin === 'EUR') {
+    } else if (coin === 'EUR') {
       defaultPrice = settings.eur_to_dzd_default;
     }
     if (defaultPrice) {
       setForm((f) => ({ ...f, price_per_unit_dzd: defaultPrice }));
     }
-  }, [showModal, settings, form.price_per_unit_dzd, form.coin]);
+  }, [showModal, settings, form.price_per_unit_dzd, form.coin, form.custom_coin]);
 
   const totals = useMemo(() => {
     const totalBuy = trades
@@ -96,10 +101,12 @@ export default function CryptoTrade() {
   const onCreate = async () => {
     const q = Number(form.quantity);
     const p = Number(form.price_per_unit_dzd);
-    if (!form.coin.trim() || !q || !p) return;
+    const chosenCoin =
+      form.coin === '__custom__' ? form.custom_coin.trim().toUpperCase() : form.coin;
+    if (!chosenCoin || !q || !p) return;
     await api.createCryptoTrade({
       trade_type: form.trade_type,
-      coin: form.coin.trim().toUpperCase(),
+      coin: chosenCoin,
       quantity: q,
       price_per_unit_dzd: p,
       counterparty: form.counterparty || null,
@@ -109,6 +116,7 @@ export default function CryptoTrade() {
     setForm({
       trade_type: 'buy',
       coin: 'USDT',
+      custom_coin: '',
       quantity: '',
       price_per_unit_dzd: '',
       counterparty: '',
@@ -318,19 +326,35 @@ export default function CryptoTrade() {
             </Select>
           </Field>
           <Field label="العملة">
-            <div className="flex gap-2">
+            <Select
+              value={form.coin}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  coin: e.target.value,
+                  // reset auto-suggested price so the new coin's default
+                  // gets re-applied by the effect
+                  price_per_unit_dzd: '',
+                })
+              }
+            >
+              {COMMON_COINS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              <option value="__custom__">أخرى…</option>
+            </Select>
+            {form.coin === '__custom__' && (
               <Input
-                value={form.coin}
-                onChange={(e) => setForm({ ...form, coin: e.target.value.toUpperCase() })}
-                list="common-coins"
-                placeholder="USDT"
+                value={form.custom_coin}
+                onChange={(e) =>
+                  setForm({ ...form, custom_coin: e.target.value.toUpperCase() })
+                }
+                placeholder="مثلاً DOGE"
+                className="mt-2"
               />
-              <datalist id="common-coins">
-                {COMMON_COINS.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
-            </div>
+            )}
           </Field>
           <Field label="الكمية">
             <Input

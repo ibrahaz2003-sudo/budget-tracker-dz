@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
-import { Save, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Save, Plus, Trash2, Upload, Download } from 'lucide-react';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { Field, Input, Select } from '../components/Input';
 import Modal from '../components/Modal';
 import { api } from '../lib/api';
+import { runBackupExport, runBackupImport } from '../lib/backup';
 import type { Category, Settings as SettingsType } from '../types';
 
 export default function Settings() {
@@ -13,6 +14,9 @@ export default function Settings() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [showCatModal, setShowCatModal] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const restoreInputRef = useRef<HTMLInputElement | null>(null);
   const [newCat, setNewCat] = useState({
     name: '',
     type: 'expense' as 'income' | 'expense',
@@ -65,6 +69,50 @@ export default function Settings() {
     if (!confirm('هل أنت متأكد من حذف هذه الفئة؟ سيتم فصل جميع العمليات المرتبطة بها.')) return;
     await api.deleteCategory(id);
     await load();
+  };
+
+  const onBackupExport = async () => {
+    setBackupBusy(true);
+    setBackupStatus(null);
+    try {
+      const result = await runBackupExport();
+      if (result === 'canceled') {
+        setBackupStatus('تم الإلغاء.');
+      } else if (result.startsWith('saved:')) {
+        setBackupStatus(`تم الحفظ في: ${result.slice(6)}`);
+      } else if (result.startsWith('shared:')) {
+        setBackupStatus('فُتحت قائمة المشاركة — اختر Google Drive أو Dropbox أو أي خدمة.');
+      } else {
+        setBackupStatus('تم التحميل.');
+      }
+    } catch (e) {
+      setBackupStatus(
+        `خطأ: ${e instanceof Error ? e.message : 'فشل التصدير'}`
+      );
+    } finally {
+      setBackupBusy(false);
+      setTimeout(() => setBackupStatus(null), 8000);
+    }
+  };
+
+  const onRestoreFilePicked = async (file: File) => {
+    if (!confirm(
+      'الاستعادة ستستبدل جميع البيانات الحالية بمحتوى الملف. متأكد؟'
+    )) return;
+    setBackupBusy(true);
+    setBackupStatus(null);
+    try {
+      const r = await runBackupImport(file);
+      setBackupStatus(`تمت الاستعادة بنجاح (${r.restored_tables} جدول).`);
+      await load();
+    } catch (e) {
+      setBackupStatus(
+        `خطأ: ${e instanceof Error ? e.message : 'فشل الاستعادة'}`
+      );
+    } finally {
+      setBackupBusy(false);
+      setTimeout(() => setBackupStatus(null), 8000);
+    }
   };
 
   return (
@@ -120,6 +168,43 @@ export default function Settings() {
             />
           </Field>
         </div>
+      </Card>
+
+      <Card title="النسخ الاحتياطي والاستعادة">
+        <p className="text-xs text-slate-500 mb-3">
+          احفظ كل بياناتك في ملف واحد، وارفعه على Google Drive أو Dropbox أو
+          واتساب للمزامنة بين أجهزتك. الاستعادة تستبدل البيانات الحالية.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onBackupExport} disabled={backupBusy}>
+            <Download size={16} />
+            تصدير نسخة احتياطية
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => restoreInputRef.current?.click()}
+            disabled={backupBusy}
+          >
+            <Upload size={16} />
+            استعادة نسخة احتياطية
+          </Button>
+          <input
+            ref={restoreInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) void onRestoreFilePicked(f);
+              e.target.value = '';
+            }}
+          />
+        </div>
+        {backupStatus && (
+          <p className="mt-3 text-sm text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-3 py-2">
+            {backupStatus}
+          </p>
+        )}
       </Card>
 
       <Card

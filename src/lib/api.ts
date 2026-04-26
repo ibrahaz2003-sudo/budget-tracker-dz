@@ -128,4 +128,18 @@ export const api = {
   // Save dialog
   showSaveDialog: (options: { defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) =>
     invoke<{ canceled: boolean; filePath?: string }>('app:show-save-dialog', options),
+  writeFile: (filePath: string, contents: string) =>
+    invoke<{ ok: true }>('app:write-file', filePath, contents),
+
+  // Backup / Restore
+  exportBackup: () =>
+    invoke<{
+      app: string;
+      schema_version: number;
+      exported_at: string;
+      data: Record<string, Record<string, unknown>[]>;
+    }>('backup:export'),
+  importBackup: (payload: {
+    data: Record<string, Record<string, unknown>[]>;
+  }) => invoke<{ ok: true; restored_tables: number }>('backup:import', payload),
 };

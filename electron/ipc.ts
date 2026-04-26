@@ -364,6 +364,68 @@ export function registerIpcHandlers() {
     };
   });
 
+  // ---------- File write helper (Electron renderer has no fs) ----------
+  ipcMain.handle('app:write-file', async (_e, filePath: string, contents: string) => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(filePath, contents, 'utf-8');
+    return { ok: true };
+  });
+
+  // ---------- Backup / Restore ----------
+  // Dumps all user-visible tables into a single JSON document so the user
+  // can ship it off to Drive / Dropbox / etc. Restore wipes the same set of
+  // tables and replays the dump.
+  const BACKUP_TABLES = [
+    'settings',
+    'budget_categories',
+    'budget_transactions',
+    'debts',
+    'computer_purchases',
+    'computer_sales',
+    'crypto_trades',
+  ] as const;
+
+  ipcMain.handle('backup:export', () => {
+    const db = getDb();
+    const data: Record<string, unknown[]> = {};
+    for (const t of BACKUP_TABLES) {
+      data[t] = db.prepare(`SELECT * FROM ${t}`).all();
+    }
+    return {
+      app: 'budget-tracker-dz',
+      schema_version: 2,
+      exported_at: new Date().toISOString(),
+      data,
+    };
+  });
+
+  ipcMain.handle(
+    'backup:import',
+    (_e, payload: { data: Record<string, Record<string, unknown>[]> }) => {
+      if (!payload || typeof payload !== 'object' || !payload.data) {
+        throw new Error('نسخة احتياطية غير صالحة');
+      }
+      const db = getDb();
+      const tx = db.transaction(() => {
+        for (const t of [...BACKUP_TABLES].reverse()) {
+          db.prepare(`DELETE FROM ${t}`).run();
+        }
+        for (const t of BACKUP_TABLES) {
+          const rows = payload.data[t] ?? [];
+          if (!rows.length) continue;
+          const cols = Object.keys(rows[0]);
+          const placeholders = cols.map(() => '?').join(', ');
+          const stmt = db.prepare(
+            `INSERT INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`
+          );
+          for (const r of rows) stmt.run(...cols.map((c) => r[c] ?? null));
+        }
+      });
+      tx();
+      return { ok: true, restored_tables: BACKUP_TABLES.length };
+    }
+  );
+
   ipcMain.handle('dashboard:monthly', () => {
     const db = getDb();
     const budget = db

@@ -30,6 +30,8 @@ export default [
         HTMLTextAreaElement: 'readonly',
         Blob: 'readonly',
         URL: 'readonly',
+        File: 'readonly',
+        FileReader: 'readonly',
         __dirname: 'readonly',
         __filename: 'readonly',
         Buffer: 'readonly',

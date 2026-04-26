@@ -472,11 +472,75 @@ export async function invokeMobile<T>(channel: string, ...args: unknown[]): Prom
       return { budget, computer, crypto } as unknown as T;
     }
 
+    case 'backup:export': {
+      const tables = [
+        'settings',
+        'budget_categories',
+        'budget_transactions',
+        'debts',
+        'computer_purchases',
+        'computer_sales',
+        'crypto_trades',
+      ];
+      const data: Record<string, unknown[]> = {};
+      for (const t of tables) {
+        data[t] = await all(`SELECT * FROM ${t}`);
+      }
+      return {
+        app: 'budget-tracker-dz',
+        schema_version: 2,
+        exported_at: new Date().toISOString(),
+        data,
+      } as unknown as T;
+    }
+    case 'backup:import': {
+      const payload = args[0] as { data: Record<string, Record<string, unknown>[]> };
+      if (!payload || typeof payload !== 'object' || !payload.data) {
+        throw new Error('نسخة احتياطية غير صالحة');
+      }
+      const tables = [
+        'settings',
+        'budget_categories',
+        'budget_transactions',
+        'debts',
+        'computer_purchases',
+        'computer_sales',
+        'crypto_trades',
+      ];
+      const d = await getDb();
+      await d.execute('BEGIN');
+      try {
+        for (const t of [...tables].reverse()) {
+          await d.run(`DELETE FROM ${t}`, []);
+        }
+        for (const t of tables) {
+          const rows = payload.data[t] ?? [];
+          if (!rows.length) continue;
+          const cols = Object.keys(rows[0]);
+          const placeholders = cols.map(() => '?').join(', ');
+          const sql = `INSERT INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`;
+          for (const r of rows) {
+            const vals = cols.map((c) => (r[c] ?? null) as string | number | null);
+            await d.run(sql, vals);
+          }
+        }
+        await d.execute('COMMIT');
+      } catch (e) {
+        await d.execute('ROLLBACK');
+        throw e;
+      }
+      return { ok: true, restored_tables: tables.length } as unknown as T;
+    }
+
     case 'app:show-save-dialog':
       // Capacitor has no native save-dialog equivalent — we fall back to the
       // web download path provided by src/lib/export.ts (which already handles
       // the non-Electron case).
       return { canceled: true } as unknown as T;
+    case 'app:write-file':
+      // File writing on mobile is routed through Capacitor Filesystem directly
+      // in the caller; this channel should never fire here.
+      throw new Error('app:write-file is Electron-only; use Capacitor Filesystem on mobile');
 
     default:
       throw new Error(`Unknown mobile IPC channel: ${channel}`);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, FileSpreadsheet, FileText, HandCoins, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { Plus, Trash2, Pencil, FileSpreadsheet, FileText, HandCoins, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -21,6 +21,8 @@ export default function Budget() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showTxModal, setShowTxModal] = useState(false);
   const [showDebtModal, setShowDebtModal] = useState(false);
+  const [editingTxId, setEditingTxId] = useState<number | null>(null);
+  const [editingDebtId, setEditingDebtId] = useState<number | null>(null);
 
   const [tx, setTx] = useState({
     type: 'expense' as 'income' | 'expense',
@@ -69,16 +71,7 @@ export default function Budget() {
     .filter((t) => t.type === 'income' && t.occurred_on.startsWith(currentMonth))
     .reduce((acc, t) => acc + t.amount_dzd, 0);
 
-  const onCreateTx = async () => {
-    const amount = Number(tx.amount_dzd);
-    if (!amount || amount <= 0) return;
-    await api.createBudget({
-      type: tx.type,
-      category_id: tx.category_id ? Number(tx.category_id) : null,
-      amount_dzd: amount,
-      description: tx.description,
-      occurred_on: tx.occurred_on,
-    });
+  const resetTxForm = () => {
     setTx({
       type: 'expense',
       category_id: '',
@@ -86,6 +79,42 @@ export default function Budget() {
       description: '',
       occurred_on: todayISO(),
     });
+    setEditingTxId(null);
+  };
+
+  const openTxCreate = () => {
+    resetTxForm();
+    setShowTxModal(true);
+  };
+
+  const openTxEdit = (t: BudgetTransaction) => {
+    setTx({
+      type: t.type,
+      category_id: t.category_id != null ? String(t.category_id) : '',
+      amount_dzd: String(t.amount_dzd),
+      description: t.description ?? '',
+      occurred_on: t.occurred_on,
+    });
+    setEditingTxId(t.id);
+    setShowTxModal(true);
+  };
+
+  const onSubmitTx = async () => {
+    const amount = Number(tx.amount_dzd);
+    if (!amount || amount <= 0) return;
+    const payload = {
+      type: tx.type,
+      category_id: tx.category_id ? Number(tx.category_id) : null,
+      amount_dzd: amount,
+      description: tx.description,
+      occurred_on: tx.occurred_on,
+    };
+    if (editingTxId != null) {
+      await api.updateBudget(editingTxId, payload);
+    } else {
+      await api.createBudget(payload);
+    }
+    resetTxForm();
     setShowTxModal(false);
     await load();
   };
@@ -96,16 +125,7 @@ export default function Budget() {
     await load();
   };
 
-  const onCreateDebt = async () => {
-    const amount = Number(debt.amount_dzd);
-    if (!debt.person_name.trim() || !amount || amount <= 0) return;
-    await api.createDebt({
-      person_name: debt.person_name.trim(),
-      direction: debt.direction,
-      amount_dzd: amount,
-      description: debt.description || null,
-      due_date: debt.due_date || null,
-    });
+  const resetDebtForm = () => {
     setDebt({
       person_name: '',
       direction: 'owed_to_me',
@@ -113,6 +133,42 @@ export default function Budget() {
       description: '',
       due_date: '',
     });
+    setEditingDebtId(null);
+  };
+
+  const openDebtCreate = () => {
+    resetDebtForm();
+    setShowDebtModal(true);
+  };
+
+  const openDebtEdit = (d: Debt) => {
+    setDebt({
+      person_name: d.person_name,
+      direction: d.direction,
+      amount_dzd: String(d.amount_dzd),
+      description: d.description ?? '',
+      due_date: d.due_date ?? '',
+    });
+    setEditingDebtId(d.id);
+    setShowDebtModal(true);
+  };
+
+  const onSubmitDebt = async () => {
+    const amount = Number(debt.amount_dzd);
+    if (!debt.person_name.trim() || !amount || amount <= 0) return;
+    const payload = {
+      person_name: debt.person_name.trim(),
+      direction: debt.direction,
+      amount_dzd: amount,
+      description: debt.description || null,
+      due_date: debt.due_date || null,
+    };
+    if (editingDebtId != null) {
+      await api.updateDebt(editingDebtId, payload);
+    } else {
+      await api.createDebt(payload);
+    }
+    resetDebtForm();
     setShowDebtModal(false);
     await load();
   };
@@ -170,12 +226,12 @@ export default function Budget() {
             PDF
           </Button>
           {tab === 'transactions' ? (
-            <Button onClick={() => setShowTxModal(true)}>
+            <Button onClick={openTxCreate}>
               <Plus size={16} />
               عملية جديدة
             </Button>
           ) : (
-            <Button onClick={() => setShowDebtModal(true)}>
+            <Button onClick={openDebtCreate}>
               <Plus size={16} />
               دين جديد
             </Button>
@@ -253,7 +309,7 @@ export default function Budget() {
             <Empty
               message="لا توجد عمليات بعد. ابدأ بإضافة الراتب والمصاريف."
               action={
-                <Button onClick={() => setShowTxModal(true)}>
+                <Button onClick={openTxCreate}>
                   <Plus size={16} />
                   عملية جديدة
                 </Button>
@@ -309,12 +365,22 @@ export default function Budget() {
                       </td>
                       <td className="py-2 px-3 text-slate-600">{t.description ?? '-'}</td>
                       <td className="py-2 px-3 text-left">
-                        <button
-                          onClick={() => onDeleteTx(t.id)}
-                          className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
-                        >
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => openTxEdit(t)}
+                            className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
+                            title="تعديل"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => onDeleteTx(t.id)}
+                            className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
+                            title="حذف"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -331,7 +397,7 @@ export default function Budget() {
             <Empty
               message="لا توجد ديون مسجلة."
               action={
-                <Button onClick={() => setShowDebtModal(true)}>
+                <Button onClick={openDebtCreate}>
                   <Plus size={16} />
                   دين جديد
                 </Button>
@@ -373,8 +439,16 @@ export default function Budget() {
                       {formatDZD(d.amount_dzd)}
                     </span>
                     <button
+                      onClick={() => openDebtEdit(d)}
+                      className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
+                      title="تعديل"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
                       onClick={() => onDeleteDebt(d.id)}
                       className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
+                      title="حذف"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -388,14 +462,23 @@ export default function Budget() {
 
       <Modal
         open={showTxModal}
-        onClose={() => setShowTxModal(false)}
-        title="عملية جديدة"
+        onClose={() => {
+          setShowTxModal(false);
+          resetTxForm();
+        }}
+        title={editingTxId != null ? 'تعديل عملية' : 'عملية جديدة'}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setShowTxModal(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowTxModal(false);
+                resetTxForm();
+              }}
+            >
               إلغاء
             </Button>
-            <Button onClick={onCreateTx}>إضافة</Button>
+            <Button onClick={onSubmitTx}>{editingTxId != null ? 'حفظ' : 'إضافة'}</Button>
           </>
         }
       >
@@ -453,14 +536,23 @@ export default function Budget() {
 
       <Modal
         open={showDebtModal}
-        onClose={() => setShowDebtModal(false)}
-        title="دين جديد"
+        onClose={() => {
+          setShowDebtModal(false);
+          resetDebtForm();
+        }}
+        title={editingDebtId != null ? 'تعديل دين' : 'دين جديد'}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setShowDebtModal(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowDebtModal(false);
+                resetDebtForm();
+              }}
+            >
               إلغاء
             </Button>
-            <Button onClick={onCreateDebt}>إضافة</Button>
+            <Button onClick={onSubmitDebt}>{editingDebtId != null ? 'حفظ' : 'إضافة'}</Button>
           </>
         }
       >

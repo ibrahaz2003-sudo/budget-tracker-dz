@@ -1,6 +1,6 @@
 {
   "name": "budget-tracker-dz",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "تطبيق متكامل لإدارة الميزانية الشخصية والتجارة بالدينار الجزائري",
   "main": "dist-electron/main.js",
   "author": "ibra",

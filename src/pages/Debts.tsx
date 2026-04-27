@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Plus,
   Trash2,
+  Pencil,
   FileSpreadsheet,
   FileText,
   ArrowDownCircle,
@@ -26,6 +27,7 @@ export default function Debts() {
   const [debts, setDebts] = useState<Debt[]>([]);
   const [filter, setFilter] = useState<Filter>('open');
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState({
     person_name: '',
     direction: 'owed_to_me' as 'owed_to_me' | 'i_owe',
@@ -61,16 +63,7 @@ export default function Debts() {
     return debts;
   }, [debts, filter]);
 
-  const onCreate = async () => {
-    const amount = Number(form.amount_dzd);
-    if (!form.person_name.trim() || !amount || amount <= 0) return;
-    await api.createDebt({
-      person_name: form.person_name.trim(),
-      direction: form.direction,
-      amount_dzd: amount,
-      description: form.description || null,
-      due_date: form.due_date || null,
-    });
+  const resetForm = () => {
     setForm({
       person_name: '',
       direction: 'owed_to_me',
@@ -78,6 +71,42 @@ export default function Debts() {
       description: '',
       due_date: '',
     });
+    setEditingId(null);
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setShowModal(true);
+  };
+
+  const openEdit = (d: Debt) => {
+    setForm({
+      person_name: d.person_name,
+      direction: d.direction,
+      amount_dzd: String(d.amount_dzd),
+      description: d.description ?? '',
+      due_date: d.due_date ?? '',
+    });
+    setEditingId(d.id);
+    setShowModal(true);
+  };
+
+  const onSubmit = async () => {
+    const amount = Number(form.amount_dzd);
+    if (!form.person_name.trim() || !amount || amount <= 0) return;
+    const payload = {
+      person_name: form.person_name.trim(),
+      direction: form.direction,
+      amount_dzd: amount,
+      description: form.description || null,
+      due_date: form.due_date || null,
+    };
+    if (editingId != null) {
+      await api.updateDebt(editingId, payload);
+    } else {
+      await api.createDebt(payload);
+    }
+    resetForm();
     setShowModal(false);
     await load();
   };
@@ -136,7 +165,7 @@ export default function Debts() {
             <FileText size={14} />
             PDF
           </Button>
-          <Button onClick={() => setShowModal(true)}>
+          <Button onClick={openCreate}>
             <Plus size={16} />
             دين جديد
           </Button>
@@ -191,7 +220,7 @@ export default function Debts() {
           <Empty
             message="لا توجد ديون في هذا العرض."
             action={
-              <Button onClick={() => setShowModal(true)}>
+              <Button onClick={openCreate}>
                 <Plus size={16} />
                 دين جديد
               </Button>
@@ -236,8 +265,16 @@ export default function Debts() {
                     {formatDZD(d.amount_dzd)}
                   </span>
                   <button
+                    onClick={() => openEdit(d)}
+                    className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
+                    title="تعديل"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
                     onClick={() => onDelete(d.id)}
                     className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
+                    title="حذف"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -250,14 +287,23 @@ export default function Debts() {
 
       <Modal
         open={showModal}
-        onClose={() => setShowModal(false)}
-        title="دين جديد"
+        onClose={() => {
+          setShowModal(false);
+          resetForm();
+        }}
+        title={editingId != null ? 'تعديل دين' : 'دين جديد'}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowModal(false);
+                resetForm();
+              }}
+            >
               إلغاء
             </Button>
-            <Button onClick={onCreate}>إضافة</Button>
+            <Button onClick={onSubmit}>{editingId != null ? 'حفظ' : 'إضافة'}</Button>
           </>
         }
       >

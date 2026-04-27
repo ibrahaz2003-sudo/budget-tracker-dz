@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, FileSpreadsheet, FileText, ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react';
+import { Plus, Trash2, Pencil, FileSpreadsheet, FileText, ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -20,6 +20,7 @@ export default function CryptoTrade() {
   const [trades, setTrades] = useState<CryptoTradeT[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
 
   const [form, setForm] = useState({
     trade_type: 'buy' as 'buy' | 'sell',
@@ -98,21 +99,7 @@ export default function CryptoTrade() {
     return (Number(form.quantity) || 0) * (Number(form.price_per_unit_dzd) || 0);
   }, [form.quantity, form.price_per_unit_dzd]);
 
-  const onCreate = async () => {
-    const q = Number(form.quantity);
-    const p = Number(form.price_per_unit_dzd);
-    const chosenCoin =
-      form.coin === '__custom__' ? form.custom_coin.trim().toUpperCase() : form.coin;
-    if (!chosenCoin || !q || !p) return;
-    await api.createCryptoTrade({
-      trade_type: form.trade_type,
-      coin: chosenCoin,
-      quantity: q,
-      price_per_unit_dzd: p,
-      counterparty: form.counterparty || null,
-      notes: form.notes || null,
-      traded_on: form.traded_on,
-    });
+  const resetForm = () => {
     setForm({
       trade_type: 'buy',
       coin: 'USDT',
@@ -123,6 +110,51 @@ export default function CryptoTrade() {
       notes: '',
       traded_on: todayISO(),
     });
+    setEditingId(null);
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setShowModal(true);
+  };
+
+  const openEdit = (t: CryptoTradeT) => {
+    const isCommon = COMMON_COINS.includes(t.coin);
+    setForm({
+      trade_type: t.trade_type,
+      coin: isCommon ? t.coin : '__custom__',
+      custom_coin: isCommon ? '' : t.coin,
+      quantity: String(t.quantity),
+      price_per_unit_dzd: String(t.price_per_unit_dzd),
+      counterparty: t.counterparty ?? '',
+      notes: t.notes ?? '',
+      traded_on: t.traded_on,
+    });
+    setEditingId(t.id);
+    setShowModal(true);
+  };
+
+  const onSubmit = async () => {
+    const q = Number(form.quantity);
+    const p = Number(form.price_per_unit_dzd);
+    const chosenCoin =
+      form.coin === '__custom__' ? form.custom_coin.trim().toUpperCase() : form.coin;
+    if (!chosenCoin || !q || !p) return;
+    const payload = {
+      trade_type: form.trade_type,
+      coin: chosenCoin,
+      quantity: q,
+      price_per_unit_dzd: p,
+      counterparty: form.counterparty || null,
+      notes: form.notes || null,
+      traded_on: form.traded_on,
+    };
+    if (editingId != null) {
+      await api.updateCryptoTrade(editingId, payload);
+    } else {
+      await api.createCryptoTrade(payload);
+    }
+    resetForm();
     setShowModal(false);
     await load();
   };
@@ -178,7 +210,7 @@ export default function CryptoTrade() {
             <FileText size={14} />
             PDF
           </Button>
-          <Button onClick={() => setShowModal(true)}>
+          <Button onClick={openCreate}>
             <Plus size={16} />
             عملية جديدة
           </Button>
@@ -234,7 +266,7 @@ export default function CryptoTrade() {
           <Empty
             message="لا توجد عمليات بعد. أضف أول صفقة."
             action={
-              <Button onClick={() => setShowModal(true)}>
+              <Button onClick={openCreate}>
                 <Plus size={16} />
                 عملية جديدة
               </Button>
@@ -284,12 +316,22 @@ export default function CryptoTrade() {
                     </td>
                     <td className="py-2 px-3 text-slate-600">{t.counterparty ?? '-'}</td>
                     <td className="py-2 px-3 text-left">
-                      <button
-                        onClick={() => onDelete(t.id)}
-                        className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(t)}
+                          className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
+                          title="تعديل"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => onDelete(t.id)}
+                          className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
+                          title="حذف"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -301,15 +343,24 @@ export default function CryptoTrade() {
 
       <Modal
         open={showModal}
-        onClose={() => setShowModal(false)}
-        title="صفقة عملة رقمية جديدة"
+        onClose={() => {
+          setShowModal(false);
+          resetForm();
+        }}
+        title={editingId != null ? 'تعديل صفقة' : 'صفقة عملة رقمية جديدة'}
         maxWidth="max-w-xl"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowModal(false);
+                resetForm();
+              }}
+            >
               إلغاء
             </Button>
-            <Button onClick={onCreate}>إضافة</Button>
+            <Button onClick={onSubmit}>{editingId != null ? 'حفظ' : 'إضافة'}</Button>
           </>
         }
       >

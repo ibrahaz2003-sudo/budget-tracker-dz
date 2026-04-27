@@ -101,6 +101,37 @@ export function registerIpcHandlers() {
     }
   );
 
+  ipcMain.handle(
+    'budget:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        category_id: number | null;
+        type: 'income' | 'expense';
+        amount_dzd: number;
+        description: string;
+        occurred_on: string;
+      }
+    ) => {
+      getDb()
+        .prepare(
+          `UPDATE budget_transactions
+           SET category_id = ?, type = ?, amount_dzd = ?, description = ?, occurred_on = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.category_id,
+          payload.type,
+          payload.amount_dzd,
+          payload.description,
+          payload.occurred_on,
+          id
+        );
+      return { ok: true };
+    }
+  );
+
   ipcMain.handle('budget:delete', (_e, id: number) => {
     getDb().prepare('DELETE FROM budget_transactions WHERE id = ?').run(id);
     return { ok: true };
@@ -136,6 +167,37 @@ export function registerIpcHandlers() {
           payload.due_date
         );
       return { id: info.lastInsertRowid };
+    }
+  );
+
+  ipcMain.handle(
+    'debts:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        person_name: string;
+        direction: 'owed_to_me' | 'i_owe';
+        amount_dzd: number;
+        description: string | null;
+        due_date: string | null;
+      }
+    ) => {
+      getDb()
+        .prepare(
+          `UPDATE debts
+           SET person_name = ?, direction = ?, amount_dzd = ?, description = ?, due_date = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.person_name,
+          payload.direction,
+          payload.amount_dzd,
+          payload.description,
+          payload.due_date,
+          id
+        );
+      return { ok: true };
     }
   );
 
@@ -208,6 +270,55 @@ export function registerIpcHandlers() {
     }
   );
 
+  ipcMain.handle(
+    'computer-purchases:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        item_name: string;
+        quantity: number;
+        purchase_currency: 'EUR' | 'USD';
+        unit_cost: number;
+        currency_to_dzd_rate: number;
+        shipping_eur: number;
+        shipping_eur_rate: number;
+        supplier: string | null;
+        notes: string | null;
+        purchased_on: string;
+      }
+    ) => {
+      const shipping_dzd = payload.shipping_eur * payload.shipping_eur_rate;
+      const total_cost_dzd =
+        payload.unit_cost * payload.currency_to_dzd_rate * payload.quantity +
+        shipping_dzd;
+      getDb()
+        .prepare(
+          `UPDATE computer_purchases
+           SET item_name = ?, quantity = ?, unit_cost_eur = ?, eur_to_dzd_rate = ?,
+               shipping_dzd = ?, total_cost_dzd = ?, supplier = ?, notes = ?, purchased_on = ?,
+               purchase_currency = ?, shipping_eur = ?, shipping_eur_rate = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.item_name,
+          payload.quantity,
+          payload.unit_cost,
+          payload.currency_to_dzd_rate,
+          shipping_dzd,
+          total_cost_dzd,
+          payload.supplier,
+          payload.notes,
+          payload.purchased_on,
+          payload.purchase_currency,
+          payload.shipping_eur,
+          payload.shipping_eur_rate,
+          id
+        );
+      return { ok: true, total_cost_dzd };
+    }
+  );
+
   ipcMain.handle('computer-purchases:delete', (_e, id: number) => {
     getDb().prepare('DELETE FROM computer_purchases WHERE id = ?').run(id);
     return { ok: true };
@@ -266,6 +377,51 @@ export function registerIpcHandlers() {
     }
   );
 
+  ipcMain.handle(
+    'computer-sales:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        purchase_id: number | null;
+        item_name: string;
+        quantity: number;
+        unit_sale_price_dzd: number;
+        unit_cost_dzd: number;
+        customer: string | null;
+        notes: string | null;
+        sold_on: string;
+      }
+    ) => {
+      const total_revenue_dzd = payload.unit_sale_price_dzd * payload.quantity;
+      const total_cost_dzd = payload.unit_cost_dzd * payload.quantity;
+      const profit_dzd = total_revenue_dzd - total_cost_dzd;
+      getDb()
+        .prepare(
+          `UPDATE computer_sales
+           SET purchase_id = ?, item_name = ?, quantity = ?, unit_sale_price_dzd = ?,
+               unit_cost_dzd = ?, total_revenue_dzd = ?, total_cost_dzd = ?, profit_dzd = ?,
+               customer = ?, notes = ?, sold_on = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.purchase_id,
+          payload.item_name,
+          payload.quantity,
+          payload.unit_sale_price_dzd,
+          payload.unit_cost_dzd,
+          total_revenue_dzd,
+          total_cost_dzd,
+          profit_dzd,
+          payload.customer,
+          payload.notes,
+          payload.sold_on,
+          id
+        );
+      return { ok: true, profit_dzd };
+    }
+  );
+
   ipcMain.handle('computer-sales:delete', (_e, id: number) => {
     getDb().prepare('DELETE FROM computer_sales WHERE id = ?').run(id);
     return { ok: true };
@@ -308,6 +464,44 @@ export function registerIpcHandlers() {
           payload.traded_on
         );
       return { id: info.lastInsertRowid, total_dzd };
+    }
+  );
+
+  ipcMain.handle(
+    'crypto:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        trade_type: 'buy' | 'sell';
+        coin: string;
+        quantity: number;
+        price_per_unit_dzd: number;
+        counterparty: string | null;
+        notes: string | null;
+        traded_on: string;
+      }
+    ) => {
+      const total_dzd = payload.quantity * payload.price_per_unit_dzd;
+      getDb()
+        .prepare(
+          `UPDATE crypto_trades
+           SET trade_type = ?, coin = ?, quantity = ?, price_per_unit_dzd = ?,
+               total_dzd = ?, counterparty = ?, notes = ?, traded_on = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.trade_type,
+          payload.coin,
+          payload.quantity,
+          payload.price_per_unit_dzd,
+          total_dzd,
+          payload.counterparty,
+          payload.notes,
+          payload.traded_on,
+          id
+        );
+      return { ok: true, total_dzd };
     }
   );
 

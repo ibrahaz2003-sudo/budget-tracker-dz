@@ -62,6 +62,16 @@ export const api = {
     description: string;
     occurred_on: string;
   }) => invoke<{ id: number }>('budget:create', payload),
+  updateBudget: (
+    id: number,
+    payload: {
+      category_id: number | null;
+      type: 'income' | 'expense';
+      amount_dzd: number;
+      description: string;
+      occurred_on: string;
+    }
+  ) => invoke<{ ok: true }>('budget:update', id, payload),
   deleteBudget: (id: number) => invoke<{ ok: true }>('budget:delete', id),
 
   // Debts
@@ -73,6 +83,16 @@ export const api = {
     description: string | null;
     due_date: string | null;
   }) => invoke<{ id: number }>('debts:create', payload),
+  updateDebt: (
+    id: number,
+    payload: {
+      person_name: string;
+      direction: 'owed_to_me' | 'i_owe';
+      amount_dzd: number;
+      description: string | null;
+      due_date: string | null;
+    }
+  ) => invoke<{ ok: true }>('debts:update', id, payload),
   toggleDebtSettled: (id: number, settled: boolean) =>
     invoke<{ ok: true }>('debts:toggle-settled', id, settled),
   deleteDebt: (id: number) => invoke<{ ok: true }>('debts:delete', id),
@@ -91,6 +111,26 @@ export const api = {
     notes: string | null;
     purchased_on: string;
   }) => invoke<{ id: number; total_cost_dzd: number }>('computer-purchases:create', payload),
+  updateComputerPurchase: (
+    id: number,
+    payload: {
+      item_name: string;
+      quantity: number;
+      purchase_currency: 'EUR' | 'USD';
+      unit_cost: number;
+      currency_to_dzd_rate: number;
+      shipping_eur: number;
+      shipping_eur_rate: number;
+      supplier: string | null;
+      notes: string | null;
+      purchased_on: string;
+    }
+  ) =>
+    invoke<{ ok: true; total_cost_dzd: number }>(
+      'computer-purchases:update',
+      id,
+      payload
+    ),
   deleteComputerPurchase: (id: number) =>
     invoke<{ ok: true }>('computer-purchases:delete', id),
 
@@ -106,6 +146,20 @@ export const api = {
     notes: string | null;
     sold_on: string;
   }) => invoke<{ id: number; profit_dzd: number }>('computer-sales:create', payload),
+  updateComputerSale: (
+    id: number,
+    payload: {
+      purchase_id: number | null;
+      item_name: string;
+      quantity: number;
+      unit_sale_price_dzd: number;
+      unit_cost_dzd: number;
+      customer: string | null;
+      notes: string | null;
+      sold_on: string;
+    }
+  ) =>
+    invoke<{ ok: true; profit_dzd: number }>('computer-sales:update', id, payload),
   deleteComputerSale: (id: number) => invoke<{ ok: true }>('computer-sales:delete', id),
 
   // Crypto
@@ -119,6 +173,18 @@ export const api = {
     notes: string | null;
     traded_on: string;
   }) => invoke<{ id: number; total_dzd: number }>('crypto:create', payload),
+  updateCryptoTrade: (
+    id: number,
+    payload: {
+      trade_type: 'buy' | 'sell';
+      coin: string;
+      quantity: number;
+      price_per_unit_dzd: number;
+      counterparty: string | null;
+      notes: string | null;
+      traded_on: string;
+    }
+  ) => invoke<{ ok: true; total_dzd: number }>('crypto:update', id, payload),
   deleteCryptoTrade: (id: number) => invoke<{ ok: true }>('crypto:delete', id),
 
   // Dashboard

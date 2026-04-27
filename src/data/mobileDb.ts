@@ -258,6 +258,25 @@ export async function invokeMobile<T>(channel: string, ...args: unknown[]): Prom
       );
       return { id: lastId } as unknown as T;
     }
+    case 'budget:update': {
+      const [id, p] = args as [
+        number,
+        {
+          category_id: number | null;
+          type: 'income' | 'expense';
+          amount_dzd: number;
+          description: string;
+          occurred_on: string;
+        },
+      ];
+      await run(
+        `UPDATE budget_transactions
+         SET category_id = ?, type = ?, amount_dzd = ?, description = ?, occurred_on = ?
+         WHERE id = ?`,
+        [p.category_id, p.type, p.amount_dzd, p.description, p.occurred_on, id]
+      );
+      return { ok: true } as unknown as T;
+    }
     case 'budget:delete':
       await run(`DELETE FROM budget_transactions WHERE id = ?`, [args[0] as number]);
       return { ok: true } as unknown as T;
@@ -280,6 +299,25 @@ export async function invokeMobile<T>(channel: string, ...args: unknown[]): Prom
         [p.person_name, p.direction, p.amount_dzd, p.description, p.due_date]
       );
       return { id: lastId } as unknown as T;
+    }
+    case 'debts:update': {
+      const [id, p] = args as [
+        number,
+        {
+          person_name: string;
+          direction: 'owed_to_me' | 'i_owe';
+          amount_dzd: number;
+          description: string | null;
+          due_date: string | null;
+        },
+      ];
+      await run(
+        `UPDATE debts
+         SET person_name = ?, direction = ?, amount_dzd = ?, description = ?, due_date = ?
+         WHERE id = ?`,
+        [p.person_name, p.direction, p.amount_dzd, p.description, p.due_date, id]
+      );
+      return { ok: true } as unknown as T;
     }
     case 'debts:toggle-settled': {
       const [id, settled] = args as [number, boolean];
@@ -332,6 +370,49 @@ export async function invokeMobile<T>(channel: string, ...args: unknown[]): Prom
       );
       return { id: lastId, total_cost_dzd } as unknown as T;
     }
+    case 'computer-purchases:update': {
+      const [id, p] = args as [
+        number,
+        {
+          item_name: string;
+          quantity: number;
+          purchase_currency: 'EUR' | 'USD';
+          unit_cost: number;
+          currency_to_dzd_rate: number;
+          shipping_eur: number;
+          shipping_eur_rate: number;
+          supplier: string | null;
+          notes: string | null;
+          purchased_on: string;
+        },
+      ];
+      const shipping_dzd = p.shipping_eur * p.shipping_eur_rate;
+      const total_cost_dzd =
+        p.unit_cost * p.currency_to_dzd_rate * p.quantity + shipping_dzd;
+      await run(
+        `UPDATE computer_purchases
+         SET item_name = ?, quantity = ?, unit_cost_eur = ?, eur_to_dzd_rate = ?,
+             shipping_dzd = ?, total_cost_dzd = ?, supplier = ?, notes = ?, purchased_on = ?,
+             purchase_currency = ?, shipping_eur = ?, shipping_eur_rate = ?
+         WHERE id = ?`,
+        [
+          p.item_name,
+          p.quantity,
+          p.unit_cost,
+          p.currency_to_dzd_rate,
+          shipping_dzd,
+          total_cost_dzd,
+          p.supplier,
+          p.notes,
+          p.purchased_on,
+          p.purchase_currency,
+          p.shipping_eur,
+          p.shipping_eur_rate,
+          id,
+        ]
+      );
+      return { ok: true, total_cost_dzd } as unknown as T;
+    }
     case 'computer-purchases:delete':
       await run(`DELETE FROM computer_purchases WHERE id = ?`, [args[0] as number]);
       return { ok: true } as unknown as T;
@@ -377,6 +458,46 @@ export async function invokeMobile<T>(channel: string, ...args: unknown[]): Prom
       );
       return { id: lastId, profit_dzd } as unknown as T;
     }
+    case 'computer-sales:update': {
+      const [id, p] = args as [
+        number,
+        {
+          purchase_id: number | null;
+          item_name: string;
+          quantity: number;
+          unit_sale_price_dzd: number;
+          unit_cost_dzd: number;
+          customer: string | null;
+          notes: string | null;
+          sold_on: string;
+        },
+      ];
+      const total_revenue_dzd = p.unit_sale_price_dzd * p.quantity;
+      const total_cost_dzd = p.unit_cost_dzd * p.quantity;
+      const profit_dzd = total_revenue_dzd - total_cost_dzd;
+      await run(
+        `UPDATE computer_sales
+         SET purchase_id = ?, item_name = ?, quantity = ?, unit_sale_price_dzd = ?,
+             unit_cost_dzd = ?, total_revenue_dzd = ?, total_cost_dzd = ?, profit_dzd = ?,
+             customer = ?, notes = ?, sold_on = ?
+         WHERE id = ?`,
+        [
+          p.purchase_id,
+          p.item_name,
+          p.quantity,
+          p.unit_sale_price_dzd,
+          p.unit_cost_dzd,
+          total_revenue_dzd,
+          total_cost_dzd,
+          profit_dzd,
+          p.customer,
+          p.notes,
+          p.sold_on,
+          id,
+        ]
+      );
+      return { ok: true, profit_dzd } as unknown as T;
+    }
     case 'computer-sales:delete':
       await run(`DELETE FROM computer_sales WHERE id = ?`, [args[0] as number]);
       return { ok: true } as unknown as T;
@@ -412,6 +533,39 @@ export async function invokeMobile<T>(channel: string, ...args: unknown[]): Prom
         ]
       );
       return { id: lastId, total_dzd } as unknown as T;
+    }
+    case 'crypto:update': {
+      const [id, p] = args as [
+        number,
+        {
+          trade_type: 'buy' | 'sell';
+          coin: string;
+          quantity: number;
+          price_per_unit_dzd: number;
+          counterparty: string | null;
+          notes: string | null;
+          traded_on: string;
+        },
+      ];
+      const total_dzd = p.quantity * p.price_per_unit_dzd;
+      await run(
+        `UPDATE crypto_trades
+         SET trade_type = ?, coin = ?, quantity = ?, price_per_unit_dzd = ?,
+             total_dzd = ?, counterparty = ?, notes = ?, traded_on = ?
+         WHERE id = ?`,
+        [
+          p.trade_type,
+          p.coin,
+          p.quantity,
+          p.price_per_unit_dzd,
+          total_dzd,
+          p.counterparty,
+          p.notes,
+          p.traded_on,
+          id,
+        ]
+      );
+      return { ok: true, total_dzd } as unknown as T;
     }
     case 'crypto:delete':
       await run(`DELETE FROM crypto_trades WHERE id = ?`, [args[0] as number]);

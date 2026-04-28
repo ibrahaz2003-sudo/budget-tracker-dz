@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Pencil, FileSpreadsheet, FileText, ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react';
+import { Plus, Trash2, Pencil, FileSpreadsheet, FileText, ArrowDownLeft, ArrowUpRight, Wallet, RefreshCw } from 'lucide-react';
 import { LongPressRow } from '../components/LongPressRow';
+import { fetchUsdPrice } from '../lib/cryptoPrices';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -15,13 +16,16 @@ import type { CryptoTrade as CryptoTradeT, Settings } from '../types';
 
 // Tradeable items: stablecoins, major cryptos, and also fiat EUR / USD which
 // the user trades against DZD (buy-low sell-high on the parallel market).
-const COMMON_COINS = ['USDT', 'EUR', 'USD', 'BTC', 'ETH', 'BNB', 'TRX', 'SOL'];
+const COMMON_COINS = ['USDT', 'EUR', 'USD', 'BTC', 'ETH', 'BNB', 'SOL', 'ETC', 'AVAX'];
 
 export default function CryptoTrade() {
   const [trades, setTrades] = useState<CryptoTradeT[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [priceFetching, setPriceFetching] = useState(false);
+  const [priceFetchError, setPriceFetchError] = useState<string | null>(null);
+  const [lastFetchedUsd, setLastFetchedUsd] = useState<number | null>(null);
 
   const [form, setForm] = useState({
     trade_type: 'buy' as 'buy' | 'sell',
@@ -112,6 +116,42 @@ export default function CryptoTrade() {
       traded_on: todayISO(),
     });
     setEditingId(null);
+    setPriceFetchError(null);
+    setLastFetchedUsd(null);
+  };
+
+  // Pull the latest USD price for the chosen coin from CoinGecko and convert
+  // it to DZD using the user's saved USD-to-DZD rate. Updates the price
+  // field so the user can review before saving the trade.
+  const onRefreshPrice = async () => {
+    if (!settings) return;
+    const coin =
+      form.coin === '__custom__' ? form.custom_coin.trim().toUpperCase() : form.coin;
+    if (!coin) {
+      setPriceFetchError('أدخل رمز العملة أولاً');
+      return;
+    }
+    setPriceFetching(true);
+    setPriceFetchError(null);
+    try {
+      const usd = await fetchUsdPrice(coin);
+      if (usd == null) {
+        setPriceFetchError(`تعذّر جلب سعر ${coin} من الإنترنت`);
+        return;
+      }
+      const usdRate = Number(settings.usd_to_dzd_default) || 0;
+      if (usdRate <= 0) {
+        setPriceFetchError('اضبط سعر الدولار في الإعدادات أولاً');
+        return;
+      }
+      const dzd = usd * usdRate;
+      setLastFetchedUsd(usd);
+      setForm((f) => ({ ...f, price_per_unit_dzd: dzd.toFixed(2) }));
+    } catch (err) {
+      setPriceFetchError(err instanceof Error ? err.message : 'فشل الاتصال بالإنترنت');
+    } finally {
+      setPriceFetching(false);
+    }
   };
 
   const openCreate = () => {
@@ -420,13 +460,40 @@ export default function CryptoTrade() {
               onChange={(e) => setForm({ ...form, quantity: e.target.value })}
             />
           </Field>
-          <Field label="السعر للوحدة (DZD)" hint="افتراضي = سعر الدولار في الإعدادات">
-            <Input
-              type="number"
-              step="0.01"
-              value={form.price_per_unit_dzd}
-              onChange={(e) => setForm({ ...form, price_per_unit_dzd: e.target.value })}
-            />
+          <Field
+            label="السعر للوحدة (DZD)"
+            hint="اضغط 🔄 لجلب السعر الحقيقي من الإنترنت"
+          >
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                step="0.01"
+                value={form.price_per_unit_dzd}
+                onChange={(e) => setForm({ ...form, price_per_unit_dzd: e.target.value })}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onRefreshPrice}
+                disabled={priceFetching}
+                title="تحديث السعر من CoinGecko"
+              >
+                <RefreshCw
+                  size={14}
+                  className={priceFetching ? 'animate-spin' : undefined}
+                />
+                {priceFetching ? '...' : 'تحديث'}
+              </Button>
+            </div>
+            {lastFetchedUsd != null && (
+              <p className="text-xs text-emerald-700 mt-1">
+                آخر سعر مجلوب: {lastFetchedUsd.toFixed(4)} USD
+              </p>
+            )}
+            {priceFetchError && (
+              <p className="text-xs text-rose-600 mt-1">{priceFetchError}</p>
+            )}
           </Field>
           <Field label="التاريخ">
             <Input

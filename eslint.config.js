@@ -32,6 +32,8 @@ export default [
         URL: 'readonly',
         File: 'readonly',
         FileReader: 'readonly',
+        fetch: 'readonly',
+        clearTimeout: 'readonly',
         __dirname: 'readonly',
         __filename: 'readonly',
         Buffer: 'readonly',

@@ -105,7 +105,7 @@ export default function App() {
           })}
         </nav>
         <div className="px-4 py-3 border-t border-slate-700 text-xs text-slate-500">
-          v0.4.1
+          v0.4.2
         </div>
       </aside>
 

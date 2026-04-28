@@ -18,7 +18,7 @@ import Empty from '../components/Empty';
 import StatCard from '../components/StatCard';
 import { Field, Input, Select, Textarea } from '../components/Input';
 import { api } from '../lib/api';
-import { formatDZD, todayISO } from '../lib/format';
+import { formatDZD } from '../lib/format';
 import { saveExcel, savePdf } from '../lib/export';
 import type { Debt } from '../types';
 
@@ -339,7 +339,7 @@ export default function Debts() {
           <Field label="تاريخ الاستحقاق">
             <Input
               type="date"
-              value={form.due_date || todayISO()}
+              value={form.due_date}
               onChange={(e) => setForm({ ...form, due_date: e.target.value })}
             />
           </Field>

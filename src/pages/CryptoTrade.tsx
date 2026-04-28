@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Pencil, FileSpreadsheet, FileText, ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react';
+import { LongPressRow } from '../components/LongPressRow';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -289,7 +290,11 @@ export default function CryptoTrade() {
               </thead>
               <tbody>
                 {trades.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <LongPressRow
+                    key={t.id}
+                    onEdit={() => openEdit(t)}
+                    className="border-b border-slate-100 hover:bg-slate-50"
+                  >
                     <td className="py-2 px-3 text-slate-700">{t.traded_on}</td>
                     <td className="py-2 px-3">
                       <span
@@ -320,7 +325,7 @@ export default function CryptoTrade() {
                         <button
                           onClick={() => openEdit(t)}
                           className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
-                          title="تعديل"
+                          title="تعديل (أو اضغط مطولاً)"
                         >
                           <Pencil size={14} />
                         </button>
@@ -333,7 +338,7 @@ export default function CryptoTrade() {
                         </button>
                       </div>
                     </td>
-                  </tr>
+                  </LongPressRow>
                 ))}
               </tbody>
             </table>

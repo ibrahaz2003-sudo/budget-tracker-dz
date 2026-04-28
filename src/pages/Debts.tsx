@@ -9,6 +9,7 @@ import {
   ArrowUpCircle,
   Scale,
 } from 'lucide-react';
+import { LongPressDiv } from '../components/LongPressRow';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -229,8 +230,9 @@ export default function Debts() {
         ) : (
           <div className="space-y-2">
             {filtered.map((d) => (
-              <div
+              <LongPressDiv
                 key={d.id}
+                onEdit={() => openEdit(d)}
                 className={`flex items-center justify-between border rounded-lg px-3 py-2 ${
                   d.is_settled
                     ? 'border-slate-200 bg-slate-50 opacity-60'
@@ -267,7 +269,7 @@ export default function Debts() {
                   <button
                     onClick={() => openEdit(d)}
                     className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
-                    title="تعديل"
+                    title="تعديل (أو اضغط مطولاً)"
                   >
                     <Pencil size={14} />
                   </button>
@@ -279,7 +281,7 @@ export default function Debts() {
                     <Trash2 size={14} />
                   </button>
                 </div>
-              </div>
+              </LongPressDiv>
             ))}
           </div>
         )}

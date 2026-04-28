@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Pencil, FileSpreadsheet, FileText, HandCoins, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { LongPressRow, LongPressDiv } from '../components/LongPressRow';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -330,7 +331,11 @@ export default function Budget() {
                 </thead>
                 <tbody>
                   {transactions.map((t) => (
-                    <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <LongPressRow
+                      key={t.id}
+                      onEdit={() => openTxEdit(t)}
+                      className="border-b border-slate-100 hover:bg-slate-50"
+                    >
                       <td className="py-2 px-3 text-slate-700">{t.occurred_on}</td>
                       <td className="py-2 px-3">
                         <span
@@ -369,7 +374,7 @@ export default function Budget() {
                           <button
                             onClick={() => openTxEdit(t)}
                             className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
-                            title="تعديل"
+                            title="تعديل (أو اضغط مطولاً)"
                           >
                             <Pencil size={14} />
                           </button>
@@ -382,7 +387,7 @@ export default function Budget() {
                           </button>
                         </div>
                       </td>
-                    </tr>
+                    </LongPressRow>
                   ))}
                 </tbody>
               </table>
@@ -406,8 +411,9 @@ export default function Budget() {
           ) : (
             <div className="space-y-2">
               {debts.map((d) => (
-                <div
+                <LongPressDiv
                   key={d.id}
+                  onEdit={() => openDebtEdit(d)}
                   className={`flex items-center justify-between border rounded-lg px-3 py-2 ${
                     d.is_settled ? 'border-slate-200 bg-slate-50 opacity-60' : 'border-slate-200'
                   }`}
@@ -441,7 +447,7 @@ export default function Budget() {
                     <button
                       onClick={() => openDebtEdit(d)}
                       className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
-                      title="تعديل"
+                      title="تعديل (أو اضغط مطولاً)"
                     >
                       <Pencil size={14} />
                     </button>
@@ -453,7 +459,7 @@ export default function Budget() {
                       <Trash2 size={14} />
                     </button>
                   </div>
-                </div>
+                </LongPressDiv>
               ))}
             </div>
           )}

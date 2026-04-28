@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, Trash2, Pencil, Mail, FileSpreadsheet, FileText, Package, ShoppingCart, TrendingUp } from 'lucide-react';
+import { LongPressRow } from '../components/LongPressRow';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -520,7 +521,11 @@ export default function ComputerTrade() {
                 </thead>
                 <tbody>
                   {purchases.map((p) => (
-                    <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <LongPressRow
+                      key={p.id}
+                      onEdit={() => openPurchaseEdit(p)}
+                      className="border-b border-slate-100 hover:bg-slate-50"
+                    >
                       <td className="py-2 px-3 text-slate-700">{p.purchased_on}</td>
                       <td className="py-2 px-3 font-medium">{p.item_name}</td>
                       <td className="py-2 px-3">{p.quantity}</td>
@@ -546,7 +551,7 @@ export default function ComputerTrade() {
                           <button
                             onClick={() => openPurchaseEdit(p)}
                             className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
-                            title="تعديل"
+                            title="تعديل (أو اضغط مطولاً)"
                           >
                             <Pencil size={14} />
                           </button>
@@ -559,7 +564,7 @@ export default function ComputerTrade() {
                           </button>
                         </div>
                       </td>
-                    </tr>
+                    </LongPressRow>
                   ))}
                 </tbody>
               </table>
@@ -598,7 +603,11 @@ export default function ComputerTrade() {
                 </thead>
                 <tbody>
                   {sales.map((s) => (
-                    <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <LongPressRow
+                      key={s.id}
+                      onEdit={() => openSaleEdit(s)}
+                      className="border-b border-slate-100 hover:bg-slate-50"
+                    >
                       <td className="py-2 px-3 text-slate-700">{s.sold_on}</td>
                       <td className="py-2 px-3 font-medium">{s.item_name}</td>
                       <td className="py-2 px-3">{s.quantity}</td>
@@ -618,7 +627,7 @@ export default function ComputerTrade() {
                           <button
                             onClick={() => openSaleEdit(s)}
                             className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
-                            title="تعديل"
+                            title="تعديل (أو اضغط مطولاً)"
                           >
                             <Pencil size={14} />
                           </button>
@@ -631,7 +640,7 @@ export default function ComputerTrade() {
                           </button>
                         </div>
                       </td>
-                    </tr>
+                    </LongPressRow>
                   ))}
                 </tbody>
               </table>

@@ -28,6 +28,12 @@ export default [
         HTMLButtonElement: 'readonly',
         HTMLSelectElement: 'readonly',
         HTMLTextAreaElement: 'readonly',
+        Blob: 'readonly',
+        URL: 'readonly',
+        File: 'readonly',
+        FileReader: 'readonly',
+        fetch: 'readonly',
+        clearTimeout: 'readonly',
         __dirname: 'readonly',
         __filename: 'readonly',
         Buffer: 'readonly',
@@ -49,6 +55,13 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'dist-electron/**', 'release/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'dist-electron/**',
+      'release/**',
+      'node_modules/**',
+      'android/**',
+      'ios/**',
+    ],
   },
 ];

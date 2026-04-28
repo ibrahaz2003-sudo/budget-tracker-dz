@@ -40,8 +40,16 @@ export interface ComputerPurchase {
   id: number;
   item_name: string;
   quantity: number;
+  // `unit_cost_eur` and `eur_to_dzd_rate` are legacy column names; they hold
+  // the unit cost and DZD conversion rate in the currency selected via
+  // `purchase_currency` (either 'EUR' or 'USD').
   unit_cost_eur: number;
   eur_to_dzd_rate: number;
+  purchase_currency: 'EUR' | 'USD';
+  // Shipping is always priced in EUR; shipping_dzd is the computed DZD total
+  // using `shipping_eur_rate` at record time.
+  shipping_eur: number | null;
+  shipping_eur_rate: number | null;
   shipping_dzd: number;
   total_cost_dzd: number;
   supplier: string | null;

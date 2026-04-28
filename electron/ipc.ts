@@ -101,6 +101,37 @@ export function registerIpcHandlers() {
     }
   );
 
+  ipcMain.handle(
+    'budget:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        category_id: number | null;
+        type: 'income' | 'expense';
+        amount_dzd: number;
+        description: string;
+        occurred_on: string;
+      }
+    ) => {
+      getDb()
+        .prepare(
+          `UPDATE budget_transactions
+           SET category_id = ?, type = ?, amount_dzd = ?, description = ?, occurred_on = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.category_id,
+          payload.type,
+          payload.amount_dzd,
+          payload.description,
+          payload.occurred_on,
+          id
+        );
+      return { ok: true };
+    }
+  );
+
   ipcMain.handle('budget:delete', (_e, id: number) => {
     getDb().prepare('DELETE FROM budget_transactions WHERE id = ?').run(id);
     return { ok: true };
@@ -139,6 +170,37 @@ export function registerIpcHandlers() {
     }
   );
 
+  ipcMain.handle(
+    'debts:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        person_name: string;
+        direction: 'owed_to_me' | 'i_owe';
+        amount_dzd: number;
+        description: string | null;
+        due_date: string | null;
+      }
+    ) => {
+      getDb()
+        .prepare(
+          `UPDATE debts
+           SET person_name = ?, direction = ?, amount_dzd = ?, description = ?, due_date = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.person_name,
+          payload.direction,
+          payload.amount_dzd,
+          payload.description,
+          payload.due_date,
+          id
+        );
+      return { ok: true };
+    }
+  );
+
   ipcMain.handle('debts:toggle-settled', (_e, id: number, settled: boolean) => {
     getDb().prepare('UPDATE debts SET is_settled = ? WHERE id = ?').run(settled ? 1 : 0, id);
     return { ok: true };
@@ -163,35 +225,97 @@ export function registerIpcHandlers() {
       payload: {
         item_name: string;
         quantity: number;
-        unit_cost_eur: number;
-        eur_to_dzd_rate: number;
-        shipping_dzd: number;
+        purchase_currency: 'EUR' | 'USD';
+        // Unit cost in the chosen purchase currency (stored in legacy
+        // `unit_cost_eur` column for backward compatibility).
+        unit_cost: number;
+        // DZD rate for the chosen purchase currency (stored in legacy
+        // `eur_to_dzd_rate` column for backward compatibility).
+        currency_to_dzd_rate: number;
+        // Shipping is always priced in EUR by the supplier; convert via the
+        // EUR→DZD rate at record time.
+        shipping_eur: number;
+        shipping_eur_rate: number;
         supplier: string | null;
         notes: string | null;
         purchased_on: string;
       }
     ) => {
+      const shipping_dzd = payload.shipping_eur * payload.shipping_eur_rate;
       const total_cost_dzd =
-        payload.unit_cost_eur * payload.eur_to_dzd_rate * payload.quantity +
-        payload.shipping_dzd;
+        payload.unit_cost * payload.currency_to_dzd_rate * payload.quantity +
+        shipping_dzd;
       const info = getDb()
         .prepare(
           `INSERT INTO computer_purchases (item_name, quantity, unit_cost_eur, eur_to_dzd_rate,
-            shipping_dzd, total_cost_dzd, supplier, notes, purchased_on)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            shipping_dzd, total_cost_dzd, supplier, notes, purchased_on,
+            purchase_currency, shipping_eur, shipping_eur_rate)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           payload.item_name,
           payload.quantity,
-          payload.unit_cost_eur,
-          payload.eur_to_dzd_rate,
-          payload.shipping_dzd,
+          payload.unit_cost,
+          payload.currency_to_dzd_rate,
+          shipping_dzd,
           total_cost_dzd,
           payload.supplier,
           payload.notes,
-          payload.purchased_on
+          payload.purchased_on,
+          payload.purchase_currency,
+          payload.shipping_eur,
+          payload.shipping_eur_rate
         );
       return { id: info.lastInsertRowid, total_cost_dzd };
+    }
+  );
+
+  ipcMain.handle(
+    'computer-purchases:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        item_name: string;
+        quantity: number;
+        purchase_currency: 'EUR' | 'USD';
+        unit_cost: number;
+        currency_to_dzd_rate: number;
+        shipping_eur: number;
+        shipping_eur_rate: number;
+        supplier: string | null;
+        notes: string | null;
+        purchased_on: string;
+      }
+    ) => {
+      const shipping_dzd = payload.shipping_eur * payload.shipping_eur_rate;
+      const total_cost_dzd =
+        payload.unit_cost * payload.currency_to_dzd_rate * payload.quantity +
+        shipping_dzd;
+      getDb()
+        .prepare(
+          `UPDATE computer_purchases
+           SET item_name = ?, quantity = ?, unit_cost_eur = ?, eur_to_dzd_rate = ?,
+               shipping_dzd = ?, total_cost_dzd = ?, supplier = ?, notes = ?, purchased_on = ?,
+               purchase_currency = ?, shipping_eur = ?, shipping_eur_rate = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.item_name,
+          payload.quantity,
+          payload.unit_cost,
+          payload.currency_to_dzd_rate,
+          shipping_dzd,
+          total_cost_dzd,
+          payload.supplier,
+          payload.notes,
+          payload.purchased_on,
+          payload.purchase_currency,
+          payload.shipping_eur,
+          payload.shipping_eur_rate,
+          id
+        );
+      return { ok: true, total_cost_dzd };
     }
   );
 
@@ -253,6 +377,51 @@ export function registerIpcHandlers() {
     }
   );
 
+  ipcMain.handle(
+    'computer-sales:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        purchase_id: number | null;
+        item_name: string;
+        quantity: number;
+        unit_sale_price_dzd: number;
+        unit_cost_dzd: number;
+        customer: string | null;
+        notes: string | null;
+        sold_on: string;
+      }
+    ) => {
+      const total_revenue_dzd = payload.unit_sale_price_dzd * payload.quantity;
+      const total_cost_dzd = payload.unit_cost_dzd * payload.quantity;
+      const profit_dzd = total_revenue_dzd - total_cost_dzd;
+      getDb()
+        .prepare(
+          `UPDATE computer_sales
+           SET purchase_id = ?, item_name = ?, quantity = ?, unit_sale_price_dzd = ?,
+               unit_cost_dzd = ?, total_revenue_dzd = ?, total_cost_dzd = ?, profit_dzd = ?,
+               customer = ?, notes = ?, sold_on = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.purchase_id,
+          payload.item_name,
+          payload.quantity,
+          payload.unit_sale_price_dzd,
+          payload.unit_cost_dzd,
+          total_revenue_dzd,
+          total_cost_dzd,
+          profit_dzd,
+          payload.customer,
+          payload.notes,
+          payload.sold_on,
+          id
+        );
+      return { ok: true, profit_dzd };
+    }
+  );
+
   ipcMain.handle('computer-sales:delete', (_e, id: number) => {
     getDb().prepare('DELETE FROM computer_sales WHERE id = ?').run(id);
     return { ok: true };
@@ -295,6 +464,44 @@ export function registerIpcHandlers() {
           payload.traded_on
         );
       return { id: info.lastInsertRowid, total_dzd };
+    }
+  );
+
+  ipcMain.handle(
+    'crypto:update',
+    (
+      _e,
+      id: number,
+      payload: {
+        trade_type: 'buy' | 'sell';
+        coin: string;
+        quantity: number;
+        price_per_unit_dzd: number;
+        counterparty: string | null;
+        notes: string | null;
+        traded_on: string;
+      }
+    ) => {
+      const total_dzd = payload.quantity * payload.price_per_unit_dzd;
+      getDb()
+        .prepare(
+          `UPDATE crypto_trades
+           SET trade_type = ?, coin = ?, quantity = ?, price_per_unit_dzd = ?,
+               total_dzd = ?, counterparty = ?, notes = ?, traded_on = ?
+           WHERE id = ?`
+        )
+        .run(
+          payload.trade_type,
+          payload.coin,
+          payload.quantity,
+          payload.price_per_unit_dzd,
+          total_dzd,
+          payload.counterparty,
+          payload.notes,
+          payload.traded_on,
+          id
+        );
+      return { ok: true, total_dzd };
     }
   );
 
@@ -350,6 +557,68 @@ export function registerIpcHandlers() {
       debts_i_owe_dzd: debtsIOweRow.total,
     };
   });
+
+  // ---------- File write helper (Electron renderer has no fs) ----------
+  ipcMain.handle('app:write-file', async (_e, filePath: string, contents: string) => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(filePath, contents, 'utf-8');
+    return { ok: true };
+  });
+
+  // ---------- Backup / Restore ----------
+  // Dumps all user-visible tables into a single JSON document so the user
+  // can ship it off to Drive / Dropbox / etc. Restore wipes the same set of
+  // tables and replays the dump.
+  const BACKUP_TABLES = [
+    'settings',
+    'budget_categories',
+    'budget_transactions',
+    'debts',
+    'computer_purchases',
+    'computer_sales',
+    'crypto_trades',
+  ] as const;
+
+  ipcMain.handle('backup:export', () => {
+    const db = getDb();
+    const data: Record<string, unknown[]> = {};
+    for (const t of BACKUP_TABLES) {
+      data[t] = db.prepare(`SELECT * FROM ${t}`).all();
+    }
+    return {
+      app: 'budget-tracker-dz',
+      schema_version: 2,
+      exported_at: new Date().toISOString(),
+      data,
+    };
+  });
+
+  ipcMain.handle(
+    'backup:import',
+    (_e, payload: { data: Record<string, Record<string, unknown>[]> }) => {
+      if (!payload || typeof payload !== 'object' || !payload.data) {
+        throw new Error('نسخة احتياطية غير صالحة');
+      }
+      const db = getDb();
+      const tx = db.transaction(() => {
+        for (const t of [...BACKUP_TABLES].reverse()) {
+          db.prepare(`DELETE FROM ${t}`).run();
+        }
+        for (const t of BACKUP_TABLES) {
+          const rows = payload.data[t] ?? [];
+          if (!rows.length) continue;
+          const cols = Object.keys(rows[0]);
+          const placeholders = cols.map(() => '?').join(', ');
+          const stmt = db.prepare(
+            `INSERT INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`
+          );
+          for (const r of rows) stmt.run(...cols.map((c) => r[c] ?? null));
+        }
+      });
+      tx();
+      return { ok: true, restored_tables: BACKUP_TABLES.length };
+    }
+  );
 
   ipcMain.handle('dashboard:monthly', () => {
     const db = getDb();

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, FileSpreadsheet, FileText, ArrowDownLeft, ArrowUpRight, Wallet } from 'lucide-react';
+import { Plus, Trash2, Pencil, FileSpreadsheet, FileText, ArrowDownLeft, ArrowUpRight, Wallet, RefreshCw } from 'lucide-react';
+import { LongPressRow } from '../components/LongPressRow';
+import { fetchUsdPrice } from '../lib/cryptoPrices';
 import Page from '../components/Page';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -12,16 +14,23 @@ import { formatDZD, formatNumber, todayISO } from '../lib/format';
 import { saveExcel, savePdf } from '../lib/export';
 import type { CryptoTrade as CryptoTradeT, Settings } from '../types';
 
-const COMMON_COINS = ['USDT', 'BTC', 'ETH', 'BNB', 'TRX', 'SOL'];
+// Tradeable items: stablecoins, major cryptos, and also fiat EUR / USD which
+// the user trades against DZD (buy-low sell-high on the parallel market).
+const COMMON_COINS = ['USDT', 'EUR', 'USD', 'BTC', 'ETH', 'BNB', 'SOL', 'ETC', 'AVAX'];
 
 export default function CryptoTrade() {
   const [trades, setTrades] = useState<CryptoTradeT[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [priceFetching, setPriceFetching] = useState(false);
+  const [priceFetchError, setPriceFetchError] = useState<string | null>(null);
+  const [lastFetchedUsd, setLastFetchedUsd] = useState<number | null>(null);
 
   const [form, setForm] = useState({
     trade_type: 'buy' as 'buy' | 'sell',
     coin: 'USDT',
+    custom_coin: '',
     quantity: '',
     price_per_unit_dzd: '',
     counterparty: '',
@@ -39,12 +48,23 @@ export default function CryptoTrade() {
     load();
   }, []);
 
-  // Suggest default USDT price = USD-to-DZD rate
+  // Suggest a default price depending on the chosen currency/coin. Only
+  // pre-fills when the price field is empty so a user-entered override is
+  // never clobbered.
   useEffect(() => {
-    if (showModal && settings && !form.price_per_unit_dzd && form.coin === 'USDT') {
-      setForm((f) => ({ ...f, price_per_unit_dzd: settings.usd_to_dzd_default }));
+    if (!showModal || !settings || form.price_per_unit_dzd) return;
+    const coin =
+      form.coin === '__custom__' ? form.custom_coin.trim().toUpperCase() : form.coin;
+    let defaultPrice = '';
+    if (coin === 'USDT' || coin === 'USD') {
+      defaultPrice = settings.usd_to_dzd_default;
+    } else if (coin === 'EUR') {
+      defaultPrice = settings.eur_to_dzd_default;
     }
-  }, [showModal, settings, form.price_per_unit_dzd, form.coin]);
+    if (defaultPrice) {
+      setForm((f) => ({ ...f, price_per_unit_dzd: defaultPrice }));
+    }
+  }, [showModal, settings, form.price_per_unit_dzd, form.coin, form.custom_coin]);
 
   const totals = useMemo(() => {
     const totalBuy = trades
@@ -54,9 +74,17 @@ export default function CryptoTrade() {
       .filter((t) => t.trade_type === 'sell')
       .reduce((acc, t) => acc + t.total_dzd, 0);
 
-    // Per-coin holdings: net quantity bought - sold
+    // Per-coin holdings: net quantity bought - sold.
+    // Sort by trade date ascending, then by id ascending, so that trades on
+    // the same day are folded in the order they were entered (which is
+    // stable) — avoids the case where a same-day sell gets applied before a
+    // same-day buy and skews the weighted average.
     const holdings: Record<string, { qty: number; avgBuyPrice: number }> = {};
-    for (const t of [...trades].sort((a, b) => a.traded_on.localeCompare(b.traded_on))) {
+    const sorted = [...trades].sort((a, b) => {
+      const d = a.traded_on.localeCompare(b.traded_on);
+      return d !== 0 ? d : a.id - b.id;
+    });
+    for (const t of sorted) {
       if (!holdings[t.coin]) holdings[t.coin] = { qty: 0, avgBuyPrice: 0 };
       const h = holdings[t.coin];
       if (t.trade_type === 'buy') {
@@ -76,28 +104,98 @@ export default function CryptoTrade() {
     return (Number(form.quantity) || 0) * (Number(form.price_per_unit_dzd) || 0);
   }, [form.quantity, form.price_per_unit_dzd]);
 
-  const onCreate = async () => {
-    const q = Number(form.quantity);
-    const p = Number(form.price_per_unit_dzd);
-    if (!form.coin.trim() || !q || !p) return;
-    await api.createCryptoTrade({
-      trade_type: form.trade_type,
-      coin: form.coin.trim().toUpperCase(),
-      quantity: q,
-      price_per_unit_dzd: p,
-      counterparty: form.counterparty || null,
-      notes: form.notes || null,
-      traded_on: form.traded_on,
-    });
+  const resetForm = () => {
     setForm({
       trade_type: 'buy',
       coin: 'USDT',
+      custom_coin: '',
       quantity: '',
       price_per_unit_dzd: '',
       counterparty: '',
       notes: '',
       traded_on: todayISO(),
     });
+    setEditingId(null);
+    setPriceFetchError(null);
+    setLastFetchedUsd(null);
+  };
+
+  // Pull the latest USD price for the chosen coin from CoinGecko and convert
+  // it to DZD using the user's saved USD-to-DZD rate. Updates the price
+  // field so the user can review before saving the trade.
+  const onRefreshPrice = async () => {
+    if (!settings) return;
+    const coin =
+      form.coin === '__custom__' ? form.custom_coin.trim().toUpperCase() : form.coin;
+    if (!coin) {
+      setPriceFetchError('أدخل رمز العملة أولاً');
+      return;
+    }
+    setPriceFetching(true);
+    setPriceFetchError(null);
+    try {
+      const usd = await fetchUsdPrice(coin);
+      if (usd == null) {
+        setPriceFetchError(`تعذّر جلب سعر ${coin} من الإنترنت`);
+        return;
+      }
+      const usdRate = Number(settings.usd_to_dzd_default) || 0;
+      if (usdRate <= 0) {
+        setPriceFetchError('اضبط سعر الدولار في الإعدادات أولاً');
+        return;
+      }
+      const dzd = usd * usdRate;
+      setLastFetchedUsd(usd);
+      setForm((f) => ({ ...f, price_per_unit_dzd: dzd.toFixed(2) }));
+    } catch (err) {
+      setPriceFetchError(err instanceof Error ? err.message : 'فشل الاتصال بالإنترنت');
+    } finally {
+      setPriceFetching(false);
+    }
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setShowModal(true);
+  };
+
+  const openEdit = (t: CryptoTradeT) => {
+    const isCommon = COMMON_COINS.includes(t.coin);
+    setForm({
+      trade_type: t.trade_type,
+      coin: isCommon ? t.coin : '__custom__',
+      custom_coin: isCommon ? '' : t.coin,
+      quantity: String(t.quantity),
+      price_per_unit_dzd: String(t.price_per_unit_dzd),
+      counterparty: t.counterparty ?? '',
+      notes: t.notes ?? '',
+      traded_on: t.traded_on,
+    });
+    setEditingId(t.id);
+    setShowModal(true);
+  };
+
+  const onSubmit = async () => {
+    const q = Number(form.quantity);
+    const p = Number(form.price_per_unit_dzd);
+    const chosenCoin =
+      form.coin === '__custom__' ? form.custom_coin.trim().toUpperCase() : form.coin;
+    if (!chosenCoin || !q || !p) return;
+    const payload = {
+      trade_type: form.trade_type,
+      coin: chosenCoin,
+      quantity: q,
+      price_per_unit_dzd: p,
+      counterparty: form.counterparty || null,
+      notes: form.notes || null,
+      traded_on: form.traded_on,
+    };
+    if (editingId != null) {
+      await api.updateCryptoTrade(editingId, payload);
+    } else {
+      await api.createCryptoTrade(payload);
+    }
+    resetForm();
     setShowModal(false);
     await load();
   };
@@ -141,8 +239,8 @@ export default function CryptoTrade() {
 
   return (
     <Page
-      title="تجارة العملات الإلكترونية"
-      description="شراء وبيع USDT والعملات الرقمية مع تتبع الربح والخسارة"
+      title="تجارة العملات"
+      description="شراء وبيع العملات الرقمية (USDT...) والنقدية (EUR / USD) بالدينار الجزائري"
       actions={
         <>
           <Button variant="secondary" size="sm" onClick={exportExcel}>
@@ -153,7 +251,7 @@ export default function CryptoTrade() {
             <FileText size={14} />
             PDF
           </Button>
-          <Button onClick={() => setShowModal(true)}>
+          <Button onClick={openCreate}>
             <Plus size={16} />
             عملية جديدة
           </Button>
@@ -207,9 +305,9 @@ export default function CryptoTrade() {
       <Card title="السجل">
         {trades.length === 0 ? (
           <Empty
-            message="لا توجد عمليات بعد. أضف أول صفقة USDT."
+            message="لا توجد عمليات بعد. أضف أول صفقة."
             action={
-              <Button onClick={() => setShowModal(true)}>
+              <Button onClick={openCreate}>
                 <Plus size={16} />
                 عملية جديدة
               </Button>
@@ -232,7 +330,11 @@ export default function CryptoTrade() {
               </thead>
               <tbody>
                 {trades.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <LongPressRow
+                    key={t.id}
+                    onEdit={() => openEdit(t)}
+                    className="border-b border-slate-100 hover:bg-slate-50"
+                  >
                     <td className="py-2 px-3 text-slate-700">{t.traded_on}</td>
                     <td className="py-2 px-3">
                       <span
@@ -259,14 +361,24 @@ export default function CryptoTrade() {
                     </td>
                     <td className="py-2 px-3 text-slate-600">{t.counterparty ?? '-'}</td>
                     <td className="py-2 px-3 text-left">
-                      <button
-                        onClick={() => onDelete(t.id)}
-                        className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => openEdit(t)}
+                          className="text-primary-600 hover:bg-primary-50 p-1.5 rounded"
+                          title="تعديل (أو اضغط مطولاً)"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button
+                          onClick={() => onDelete(t.id)}
+                          className="text-rose-600 hover:bg-rose-50 p-1.5 rounded"
+                          title="حذف"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
-                  </tr>
+                  </LongPressRow>
                 ))}
               </tbody>
             </table>
@@ -276,15 +388,24 @@ export default function CryptoTrade() {
 
       <Modal
         open={showModal}
-        onClose={() => setShowModal(false)}
-        title="صفقة عملة رقمية جديدة"
+        onClose={() => {
+          setShowModal(false);
+          resetForm();
+        }}
+        title={editingId != null ? 'تعديل صفقة' : 'صفقة عملة رقمية جديدة'}
         maxWidth="max-w-xl"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowModal(false);
+                resetForm();
+              }}
+            >
               إلغاء
             </Button>
-            <Button onClick={onCreate}>إضافة</Button>
+            <Button onClick={onSubmit}>{editingId != null ? 'حفظ' : 'إضافة'}</Button>
           </>
         }
       >
@@ -301,19 +422,35 @@ export default function CryptoTrade() {
             </Select>
           </Field>
           <Field label="العملة">
-            <div className="flex gap-2">
+            <Select
+              value={form.coin}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  coin: e.target.value,
+                  // reset auto-suggested price so the new coin's default
+                  // gets re-applied by the effect
+                  price_per_unit_dzd: '',
+                })
+              }
+            >
+              {COMMON_COINS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              <option value="__custom__">أخرى…</option>
+            </Select>
+            {form.coin === '__custom__' && (
               <Input
-                value={form.coin}
-                onChange={(e) => setForm({ ...form, coin: e.target.value.toUpperCase() })}
-                list="common-coins"
-                placeholder="USDT"
+                value={form.custom_coin}
+                onChange={(e) =>
+                  setForm({ ...form, custom_coin: e.target.value.toUpperCase() })
+                }
+                placeholder="مثلاً DOGE"
+                className="mt-2"
               />
-              <datalist id="common-coins">
-                {COMMON_COINS.map((c) => (
-                  <option key={c} value={c} />
-                ))}
-              </datalist>
-            </div>
+            )}
           </Field>
           <Field label="الكمية">
             <Input
@@ -323,13 +460,40 @@ export default function CryptoTrade() {
               onChange={(e) => setForm({ ...form, quantity: e.target.value })}
             />
           </Field>
-          <Field label="السعر للوحدة (DZD)" hint="افتراضي = سعر الدولار في الإعدادات">
-            <Input
-              type="number"
-              step="0.01"
-              value={form.price_per_unit_dzd}
-              onChange={(e) => setForm({ ...form, price_per_unit_dzd: e.target.value })}
-            />
+          <Field
+            label="السعر للوحدة (DZD)"
+            hint="اضغط 🔄 لجلب السعر الحقيقي من الإنترنت"
+          >
+            <div className="flex gap-2">
+              <Input
+                type="number"
+                step="0.01"
+                value={form.price_per_unit_dzd}
+                onChange={(e) => setForm({ ...form, price_per_unit_dzd: e.target.value })}
+              />
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={onRefreshPrice}
+                disabled={priceFetching}
+                title="تحديث السعر من CoinGecko"
+              >
+                <RefreshCw
+                  size={14}
+                  className={priceFetching ? 'animate-spin' : undefined}
+                />
+                {priceFetching ? '...' : 'تحديث'}
+              </Button>
+            </div>
+            {lastFetchedUsd != null && (
+              <p className="text-xs text-emerald-700 mt-1">
+                آخر سعر مجلوب: {lastFetchedUsd.toFixed(4)} USD
+              </p>
+            )}
+            {priceFetchError && (
+              <p className="text-xs text-rose-600 mt-1">{priceFetchError}</p>
+            )}
           </Field>
           <Field label="التاريخ">
             <Input

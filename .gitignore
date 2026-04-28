@@ -2,6 +2,16 @@ node_modules
 dist
 dist-electron
 release
+
+# Capacitor native projects (generated; can be re-created with `npx cap add android`)
+android/build
+android/app/build
+android/.gradle
+android/captures
+android/local.properties
+android/.idea
+ios/build
+ios/App/Pods
 *.log
 *.tsbuildinfo
 .DS_Store
